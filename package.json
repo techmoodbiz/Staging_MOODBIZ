@@ -1,0 +1,53 @@
+{
+  "name": "moodbiz-portal",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@google/genai": "*",
+    "@google/generative-ai": "^0.24.1",
+    "axios": "^1.13.5",
+    "dotenv": "^16.4.7",
+    "firebase": "^11.2.0",
+    "i18next": "^25.8.13",
+    "i18next-browser-languagedetector": "^8.2.1",
+    "lucide-react": "^0.471.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-i18next": "^16.5.4",
+    "react-markdown": "^9.1.0",
+    "react-router-dom": "^7.12.0",
+    "uuid": "^8.3.2",
+    "gaxios": "6.1.1",
+    "gcp-metadata": "6.1.0",
+    "google-auth-library": "9.15.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "^0.5.19",
+    "@types/node": "^22.10.7",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.5.1",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7",
+    "vitest": "^4.0.17"
+  },
+  "overrides": {
+    "minimatch": "^10.2.1",
+    "entities": "4.5.0",
+    "htmlparser2": "9.1.0",
+    "gaxios": "6.1.1",
+    "gcp-metadata": "6.1.0",
+    "google-auth-library": "9.15.0"
+  }
+}

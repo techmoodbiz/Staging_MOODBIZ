@@ -1,0 +1,134 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================
+    // 1. HELPER FUNCTIONS (CORE SECURITY LOGIC)
+    // =========================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function getRole() {
+       return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+         ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+         : 'viewer';
+    }
+
+    function isAdmin() {
+      return getRole() == 'admin';
+    }
+
+    function isBrandOwner() {
+      return getRole() == 'brand_owner';
+    }
+    
+    function isContentCreator() {
+      return getRole() == 'content_creator';
+    }
+
+    function isValidGeneration() {
+      return request.resource.data.user_id == request.auth.uid;
+    }
+
+    // =========================================================
+    // 2. COLLECTION RULES
+    // =========================================================
+
+    // --- USERS COLLECTION ---
+    match /users/{userId} {
+      // Xem: Chính chủ, Admin hoặc Brand Owner
+      allow read: if isOwner(userId) || isAdmin() || isBrandOwner();
+      
+      // Tạo: Admin được tạo mọi loại. Brand Owner chỉ được tạo Content Creator.
+      allow create: if isAdmin() || (isBrandOwner() && request.resource.data.role == 'content_creator');
+
+      // Sửa: 
+      // 1. Admin: Quyền lực tuyệt đối.
+      // 2. Brand Owner quản lý nhân viên: Được sửa nếu target là creator VÀ role không đổi.
+      // 3. Chính chủ (Self-update): Được sửa tên/avatar... NHƯNG KHÔNG ĐƯỢC đổi role của chính mình.
+      allow update: if isAdmin() || 
+        (isBrandOwner() && resource.data.role == 'content_creator' && request.resource.data.role == 'content_creator') ||
+        (isOwner(userId) && request.resource.data.role == resource.data.role);
+
+      // Xóa: Admin xóa được hết. Brand Owner chỉ xóa được Content Creator.
+      allow delete: if isAdmin() || (isBrandOwner() && resource.data.role == 'content_creator');
+    }
+
+    // --- BRANDS COLLECTION ---
+    match /brands/{brandId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin() || isBrandOwner();
+    }
+
+    // --- GENERATIONS (AI CONTENT) ---
+    match /generations/{genId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidGeneration();
+      allow update, delete: if isAdmin() || isBrandOwner() || (isSignedIn() && resource.data.user_id == request.auth.uid);
+
+      match /comments/{commentId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+        allow delete: if isAdmin();
+      }
+    }
+    
+    // --- AUDITORS (HISTORY) ---
+    match /auditors/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.user_id == request.auth.uid;
+      allow update, delete: if false; 
+    }
+
+    // --- AUDIT_RULES (SOP) ---
+    match /audit_rules/{docId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin(); 
+    }
+
+    // --- ANALYTICS ---
+    match /brand_analytics/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin(); 
+    }
+
+    // --- BRAND GUIDELINES (RAG DATA) ---
+    match /brand_guidelines/{docId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdmin() || isBrandOwner();
+      allow delete: if isAdmin() || isBrandOwner();
+      
+      match /chunks/{chunkId} {
+        allow read: if isSignedIn();
+        allow write: if isAdmin();
+      }
+    }
+
+    // --- ASSETS (Personas, Products, Templates) ---
+    match /personas/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isBrandOwner() || (isContentCreator() && request.method != 'delete');
+    }
+
+    match /products/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isBrandOwner();
+    }
+
+    match /content_templates/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || isBrandOwner();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
