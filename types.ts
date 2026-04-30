@@ -260,3 +260,34 @@ export interface ScrapeResponse {
   url: string;
   cleaningLevel: string;
 }
+
+// ==================
+// Rank Checker Interfaces
+// ==================
+
+export interface RankKeyword {
+  id: string;
+  brand_id: string;
+  keyword: string;
+  created_at: any;
+}
+
+export interface RankHistory {
+  id: string;
+  keyword_id: string;
+  brand_id: string;
+  position: number | null;
+  url: string | null;
+  checked_at: any;
+}
+
+export interface RankJob {
+  id: string;
+  brand_id: string;
+  domain: string;
+  total: number;
+  pending_keywords: string[]; // List of keyword IDs
+  completed_results: any[];
+  status: 'pending' | 'processing' | 'completed' | 'cancelled';
+  created_at: any;
+}

@@ -29,6 +29,7 @@ import PersonasTab from './components/tabs/PersonasTab';
 import ResearchTab from './components/tabs/ResearchTab';
 import MarketsTab from './components/tabs/MarketsTab';
 import SeoUrlInspectorTab from './components/tabs/SeoUrlInspectorTab';
+import RankCheckerTab from './components/tabs/RankCheckerTab';
 import firebase from './firebase';
 
 const App = () => {
@@ -579,6 +580,11 @@ const App = () => {
           <Route path="seo-inspector" element={
             hasAccess(['admin', 'brand_owner', 'content_creator']) ?
               <SeoUrlInspectorTab currentUser={currentUser} />
+              : <RestrictedAccess />
+          } />
+          <Route path="rank-checker" element={
+            hasAccess(['admin', 'brand_owner', 'content_creator']) ?
+              <RankCheckerTab currentUser={currentUser} availableBrands={availableBrands} />
               : <RestrictedAccess />
           } />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

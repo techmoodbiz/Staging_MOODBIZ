@@ -55,6 +55,7 @@ export const NAV_ITEMS = [
   { id: 'research', label: 'AI Research', icon: Search, path: '/research', roles: ['admin', 'brand_owner', 'content_creator'] },
   { id: 'auditor', label: 'Voice Auditor', icon: Activity, path: '/auditor', roles: ['admin', 'brand_owner', 'content_creator'] },
   { id: 'seo_inspector', label: 'SEO URL Inspector', icon: FileSearch, path: '/seo-inspector', roles: ['admin', 'brand_owner', 'content_creator'] },
+  { id: 'rank_checker', label: 'Google Rank Checker', icon: Activity, path: '/rank-checker', roles: ['admin', 'brand_owner', 'content_creator'] },
 
   { type: 'header', label: 'Archives', roles: ['admin', 'brand_owner', 'content_creator', 'viewer'] },
   { id: 'generations', label: 'Generator History', icon: BookOpen, path: '/generations', roles: ['admin', 'brand_owner', 'content_creator', 'viewer'] },

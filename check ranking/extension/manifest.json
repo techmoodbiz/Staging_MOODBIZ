@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Moodbiz Rank Checker",
+  "version": "1.3.0",
+  "description": "Kiểm tra thứ hạng từ khóa trên Google thực tế - Moodbiz.vn",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "storage",
+    "alarms",
+    "windows"
+  ],
+  "host_permissions": [
+    "http://localhost:5000/*",
+    "http://localhost:5173/*",
+    "https://*.vercel.app/*",
+    "https://www.google.com/*",
+    "https://google.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:5000/*",
+        "http://localhost:5173/*",
+        "https://*.vercel.app/*"
+      ],
+      "js": ["config.js", "content-bridge.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Rank Checker"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
