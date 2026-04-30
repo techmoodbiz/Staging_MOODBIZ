@@ -3,4 +3,4 @@
 // Local:      'http://localhost:5000'
 // Production: 'https://rank.moodbiz.vn'
 
-const SERVER_URL = 'https://staging-backend-one.vercel.app';
+const SERVER_URL = 'http://localhost:5000';

@@ -20,7 +20,11 @@ chrome.runtime.onMessage.addListener((msg) => {
 
 // Nhận lệnh từ Dashboard → chuyển cho background (có retry)
 window.addEventListener('rank-checker-trigger', async (e) => {
-  const { jobId, token } = e.detail || {};
+  const { jobId } = e.detail || {};
+
+  // Đọc JWT token từ localStorage của dashboard để truyền cho background
+  let token = null;
+  try { token = localStorage.getItem('moodbiz_token'); } catch(e) {}
 
   let lastError = '';
   let lastResponse = null;
@@ -30,7 +34,7 @@ window.addEventListener('rank-checker-trigger', async (e) => {
       const response = await chrome.runtime.sendMessage({
         type: 'START_CHECKING',
         jobId,
-        token, // gửi kèm JWT từ event detail
+        token, // gửi kèm JWT để background lưu vào chrome.storage
       });
 
       if (response?.ok) {

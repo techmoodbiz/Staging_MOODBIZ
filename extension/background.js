@@ -426,7 +426,7 @@ async function startProcessing() {
     // Lấy keyword tiếp theo từ queue
     let item;
     try {
-      const res = await fetch(`${SERVER_URL}/api/rank-checker?action=get-next-keyword`, { headers: apiHeaders() });
+      const res = await fetch(`${SERVER_URL}/api/check-queue/next`, { headers: apiHeaders() });
       item = await res.json();
     } catch(e) {
       console.error('Queue error:', e.message);
@@ -466,7 +466,7 @@ async function startProcessing() {
     // Gửi kết quả về server
     keepAlive();
     try {
-      await fetch(`${SERVER_URL}/api/rank-checker?action=submit-result`, {
+      await fetch(`${SERVER_URL}/api/check-results`, {
         method: 'POST',
         headers: apiHeaders(),
         body: JSON.stringify({
@@ -539,7 +539,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function updateBadge() {
   if (isProcessing) return;
   try {
-    const res = await fetch(`${SERVER_URL}/api/rank-checker?action=get-job-status`, { headers: apiHeaders() });
+    const res = await fetch(`${SERVER_URL}/api/check-queue/status`, { headers: apiHeaders() });
     if (res.ok) {
       const data = await res.json();
       setBadge(data.pendingJobs > 0 ? String(data.pendingJobs) : '', data.pendingJobs > 0 ? '#ef4444' : '');
