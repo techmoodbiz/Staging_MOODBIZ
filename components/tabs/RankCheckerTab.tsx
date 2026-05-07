@@ -1,72 +1,66 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
-import { 
-  Search, Loader2, AlertTriangle, CheckCircle2, 
-  RefreshCw, TrendingUp, TrendingDown, Trash2, 
-  Plus, List, Globe, Monitor, ShieldAlert,
-  ArrowRight, ExternalLink, Activity, Info
+import React, { useState, useEffect } from 'react';
+import {
+  Search, Loader2, AlertTriangle, RefreshCw,
+  Trash2, Plus, List, Globe, ShieldAlert,
+  ExternalLink, TrendingUp, TrendingDown, Minus,
+  Monitor, ArrowLeft, CheckCircle2
 } from 'lucide-react';
-import SectionHeader from '../SectionHeader';
 import { auth } from '../../firebase';
-import type { User, Brand } from '../../types';
+import { RankKeyword, RankingResult, Brand, User } from '../../types';
+import { useTranslation } from 'react-i18next';
+import SectionHeader from '../SectionHeader';
 
 interface RankCheckerTabProps {
-  currentUser: User;
+  selectedBrandId: string;
+  setSelectedBrandId: (id: string) => void;
+  setToast?: (toast: { type: 'success' | 'error', message: string }) => void;
   availableBrands: Brand[];
+  currentUser?: User | null;
 }
 
-interface RankResult {
-  keywordId: string;
-  keyword: string;
-  position: number | null;
-  url: string | null;
-  checkedAt: string | null;
-  history?: any[];
-}
+const BASE_URL = (import.meta as any).env?.VITE_API_URL || "https://staging-backend-one.vercel.app/api";
 
-const getEnvVar = (key: string) => {
-  try {
-    // @ts-ignore
-    return import.meta?.env?.[key];
-  } catch (e) {
-    return undefined;
-  }
-};
-
-const BASE_URL = getEnvVar('VITE_API_URL') || "https://staging-backend-one.vercel.app/api";
-
-const RankCheckerTab: React.FC<RankCheckerTabProps> = ({ currentUser, availableBrands }) => {
+const RankCheckerTab: React.FC<RankCheckerTabProps> = ({
+  selectedBrandId,
+  setSelectedBrandId,
+  setToast,
+  availableBrands,
+}) => {
   const { t } = useTranslation();
-  
-  const [selectedBrandId, setSelectedBrandId] = useState<string>(() => {
-    return localStorage.getItem('rank_checker_selected_brand') || (availableBrands[0]?.id || '');
-  });
-
-  const selectedBrand = useMemo(() => 
-    availableBrands.find(b => b.id === selectedBrandId), 
-    [selectedBrandId, availableBrands]
-  );
-
-  const [keywords, setKeywords] = useState<any[]>([]);
-  const [rankings, setRankings] = useState<RankResult[]>([]);
+  const [keywords, setKeywords] = useState<RankKeyword[]>([]);
+  const [rankings, setRankings] = useState<RankingResult[]>([]);
   const [loading, setLoading] = useState(false);
-  const [loadingRankings, setLoadingRankings] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
+  const [newKeyword, setNewKeyword] = useState('');
+  const [showBulkAdd, setShowBulkAdd] = useState(false);
+  const [bulkKeywords, setBulkKeywords] = useState('');
+  const [isExtensionReady, setIsExtensionReady] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobProgress, setJobProgress] = useState<any>(null);
-  const [showProgress, setShowProgress] = useState(false);
-  
-  const [newKeyword, setNewKeyword] = useState('');
-  const [bulkKeywords, setBulkKeywords] = useState('');
-  const [showBulkAdd, setShowBulkAdd] = useState(false);
+
+  const selectedBrand = availableBrands.find(b => b.id === selectedBrandId);
+
+  useEffect(() => {
+    const handleReady = () => setIsExtensionReady(true);
+    window.addEventListener('rank-checker-ready', handleReady);
+    window.dispatchEvent(new CustomEvent('rank-checker-ping'));
+    return () => window.removeEventListener('rank-checker-ready', handleReady);
+  }, []);
 
   useEffect(() => {
     if (selectedBrandId) {
-      localStorage.setItem('rank_checker_selected_brand', selectedBrandId);
       fetchKeywords();
       fetchRankings();
     }
   }, [selectedBrandId]);
+
+  useEffect(() => {
+    let interval: any;
+    if (isChecking && jobId) {
+      interval = setInterval(fetchJobStatus, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [isChecking, jobId]);
 
   const fetchKeywords = async () => {
     if (!selectedBrandId) return;
@@ -84,7 +78,7 @@ const RankCheckerTab: React.FC<RankCheckerTabProps> = ({ currentUser, availableB
 
   const fetchRankings = async () => {
     if (!selectedBrandId) return;
-    setLoadingRankings(true);
+    setLoading(true);
     try {
       const token = await auth.currentUser?.getIdToken();
       const res = await fetch(`${BASE_URL}/rank-checker?action=get-rankings&brandId=${selectedBrandId}`, {
@@ -95,255 +89,223 @@ const RankCheckerTab: React.FC<RankCheckerTabProps> = ({ currentUser, availableB
     } catch (err) {
       console.error('Fetch rankings error:', err);
     } finally {
-      setLoadingRankings(false);
+      setLoading(false);
+    }
+  };
+
+  const fetchJobStatus = async () => {
+    if (!jobId) return;
+    try {
+      const res = await fetch(`${BASE_URL}/rank-checker?action=get-job-status&jobId=${jobId}`);
+      const data = await res.json();
+      if (res.ok) {
+        setJobProgress(data);
+        if (data.done) {
+          setIsChecking(false);
+          fetchRankings();
+          if (setToast) setToast({ type: 'success', message: 'Kiểm tra thứ hạng hoàn tất' });
+        }
+      }
+    } catch (err) {
+      console.error('Fetch job status error:', err);
     }
   };
 
   const handleAddKeyword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newKeyword.trim() || !selectedBrandId) return;
-    
     try {
       const token = await auth.currentUser?.getIdToken();
       const res = await fetch(`${BASE_URL}/rank-checker?action=manage-keywords`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          subAction: 'add',
-          brandId: selectedBrandId,
-          keyword: newKeyword.trim()
-        })
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ action: 'add', subAction: 'add', brandId: selectedBrandId, brand_id: selectedBrandId, keyword: newKeyword.trim() })
       });
       if (res.ok) {
         setNewKeyword('');
         fetchKeywords();
         fetchRankings();
+        if (setToast) setToast({ type: 'success', message: 'Đã thêm từ khóa' });
       }
-    } catch (err) {
-      console.error('Add keyword error:', err);
-    }
+    } catch (err) {}
   };
 
   const handleBulkAdd = async () => {
-    const kws = bulkKeywords.split('\n').map(k => k.trim()).filter(k => k);
-    if (!kws.length || !selectedBrandId) return;
-
+    if (!bulkKeywords.trim() || !selectedBrandId) return;
+    const kwList = bulkKeywords.split('\n').map(k => k.trim()).filter(k => k);
+    if (!kwList.length) return;
     try {
       const token = await auth.currentUser?.getIdToken();
       const res = await fetch(`${BASE_URL}/rank-checker?action=manage-keywords`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          subAction: 'bulk-add',
-          brandId: selectedBrandId,
-          keywords: kws
-        })
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ action: 'bulk-add', subAction: 'bulk-add', brandId: selectedBrandId, brand_id: selectedBrandId, keywords: kwList })
       });
       if (res.ok) {
         setBulkKeywords('');
         setShowBulkAdd(false);
         fetchKeywords();
         fetchRankings();
+        if (setToast) setToast({ type: 'success', message: `Đã thêm ${kwList.length} từ khóa` });
       }
-    } catch (err) {
-      console.error('Bulk add error:', err);
-    }
+    } catch (err) {}
   };
 
   const handleDeleteKeyword = async (id: string) => {
-    if (!window.confirm(t('common.confirm_delete', 'Are you sure you want to delete this?'))) return;
+    if (!window.confirm('Bạn có chắc chắn muốn xóa từ khóa này?')) return;
     try {
       const token = await auth.currentUser?.getIdToken();
-      const res = await fetch(`${BASE_URL}/rank-checker?action=manage-keywords`, {
+      await fetch(`${BASE_URL}/rank-checker?action=manage-keywords`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          subAction: 'delete',
-          keywordId: id
-        })
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ action: 'delete', subAction: 'delete', keywordId: id, keyword_id: id })
       });
-      if (res.ok) {
-        fetchKeywords();
-        fetchRankings();
-      }
-    } catch (err) {
-      console.error('Delete keyword error:', err);
-    }
+      fetchKeywords();
+      fetchRankings();
+    } catch (err) {}
   };
 
   const startChecking = async () => {
-    if (!selectedBrandId || isChecking) return;
-    
-    setLoading(true);
+    if (!keywords.length || !selectedBrandId) return;
+    setIsChecking(true);
+    setJobProgress(null);
     try {
       const token = await auth.currentUser?.getIdToken();
       const res = await fetch(`${BASE_URL}/rank-checker?action=create-job`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ brandId: selectedBrandId })
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ brandId: selectedBrandId, brand_id: selectedBrandId })
       });
       const data = await res.json();
-      
       if (res.ok && data.jobId) {
         setJobId(data.jobId);
-        setIsChecking(true);
-        setShowProgress(true);
-        
-        // Trigger Extension via CustomEvent
-        window.dispatchEvent(new CustomEvent('rank-checker-trigger', {
-          detail: { jobId: data.jobId, token }
-        }));
-        
-        // Start polling for status
-        pollJobStatus(data.jobId);
+        window.dispatchEvent(new CustomEvent('rank-checker-trigger', { detail: { jobId: data.jobId, token } }));
       } else {
-        alert(data.message || 'Lỗi khi tạo job');
+        setIsChecking(false);
+        alert(data.message || 'Lỗi khi khởi tạo job');
       }
     } catch (err) {
-      console.error('Start check error:', err);
-    } finally {
-      setLoading(false);
+      setIsChecking(false);
     }
   };
 
-  const pollJobStatus = (id: string) => {
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`${BASE_URL}/rank-checker?action=get-job-status&jobId=${id}`);
-        const data = await res.json();
-        if (res.ok) {
-          setJobProgress(data);
-          if (data.done) {
-            clearInterval(interval);
-            setIsChecking(false);
-            fetchRankings();
-          }
-        }
-      } catch (err) {
-        console.error('Poll status error:', err);
-        clearInterval(interval);
-        setIsChecking(false);
-      }
-    }, 2000);
-  };
-
-  // Stats calculation
-  const stats = useMemo(() => {
-    const total = rankings.length;
-    const top3 = rankings.filter(r => r.position && r.position <= 3).length;
-    const top10 = rankings.filter(r => r.position && r.position <= 10).length;
-    const notFound = rankings.filter(r => !r.position).length;
-    return { total, top3, top10, notFound };
-  }, [rankings]);
+  const top3Count = rankings.filter(r => r.position && r.position <= 3).length;
+  const top10Count = rankings.filter(r => r.position && r.position <= 10).length;
+  const progressPct = jobProgress ? Math.round((jobProgress.completed / jobProgress.total) * 100) : 0;
 
   return (
     <div className="flex flex-col h-full animate-in fade-in duration-1000 space-y-8 pb-12">
-      <SectionHeader 
-        title="Google Rank Checker" 
-        subtitle="Theo dõi thứ hạng từ khóa thời gian thực qua trình duyệt." 
-      />
+      <SectionHeader
+        title="Google Rank Checker"
+        subtitle="Theo dõi thứ hạng từ khóa thời gian thực qua trình duyệt."
+      >
+        <div className="flex flex-wrap gap-2">
+          {availableBrands.map(brand => (
+            <button
+              key={brand.id}
+              onClick={() => setSelectedBrandId(brand.id)}
+              className={`px-5 py-2.5 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all duration-300 ${
+                selectedBrandId === brand.id
+                  ? 'bg-navy text-white shadow-premium scale-105'
+                  : 'bg-white text-slate-400 border border-slate-200 hover:border-cyan hover:text-navy'
+              }`}
+            >
+              {brand.name}
+            </button>
+          ))}
+        </div>
+      </SectionHeader>
 
-      {/* Brand Selection */}
-      <div className="flex flex-wrap items-center gap-4">
-        {availableBrands.map(brand => (
-          <button
-            key={brand.id}
-            onClick={() => setSelectedBrandId(brand.id)}
-            className={`px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest transition-all border ${
-              selectedBrandId === brand.id
-                ? 'bg-navy text-white border-navy shadow-glow scale-105'
-                : 'bg-white text-slate-400 border-slate-100 hover:border-cyan hover:text-cyan'
-            }`}
-          >
-            {brand.name}
-          </button>
-        ))}
-      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* Left: Stats & Keywords */}
+        {/* ── Left Column ── */}
         <div className="lg:col-span-1 space-y-6">
-          {/* Quick Stats */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="premium-card p-5 border border-slate-100 bg-white shadow-soft">
+
+          {/* Stats */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="premium-card p-6 border border-slate-100 shadow-soft flex flex-col items-center justify-center text-center">
               <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Top 3</div>
-              <div className="text-2xl font-black text-amber-500 tabular-nums">{stats.top3}</div>
+              <div className="text-3xl font-black text-amber-500 tabular-nums">{top3Count}</div>
             </div>
-            <div className="premium-card p-5 border border-slate-100 bg-white shadow-soft">
+            <div className="premium-card p-6 border border-slate-100 shadow-soft flex flex-col items-center justify-center text-center">
               <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Top 10</div>
-              <div className="text-2xl font-black text-emerald-500 tabular-nums">{stats.top10}</div>
+              <div className="text-3xl font-black text-emerald-500 tabular-nums">{top10Count}</div>
             </div>
           </div>
 
-          {/* Add Keyword Form */}
-          <div className="premium-card p-6 border border-slate-100 bg-white shadow-premium">
-            <h3 className="text-sm font-black text-navy uppercase tracking-widest mb-4 flex items-center gap-2">
-              <Activity className="w-4 h-4 text-cyan" /> Keywords
+          {/* Keyword Manager */}
+          <div className="premium-card p-8 border border-slate-100 shadow-premium relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-cyan/10 rounded-full blur-[40px] -mr-16 -mt-16 pointer-events-none group-hover:bg-cyan/20 transition-colors" />
+
+            <h3 className="text-sm font-black text-navy uppercase tracking-[0.15em] mb-6 flex items-center gap-2">
+              <Globe className="w-4 h-4 text-cyan" /> Keywords
             </h3>
-            
-            <form onSubmit={handleAddKeyword} className="space-y-3 mb-6">
-              <div className="relative">
-                <input
-                  type="text"
-                  value={newKeyword}
-                  onChange={(e) => setNewKeyword(e.target.value)}
-                  placeholder="Nhập từ khóa..."
-                  className="w-full pl-4 pr-10 py-4 bg-slate-50 border-none rounded-2xl text-sm font-bold text-navy outline-none focus:ring-4 focus:ring-cyan/10 transition-all placeholder:text-slate-300"
-                />
-                <button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-cyan hover:bg-white rounded-xl transition-all">
-                  <Plus size={20} strokeWidth={3} />
-                </button>
-              </div>
+
+            <form onSubmit={handleAddKeyword} className="flex gap-2 relative z-10">
+              <input
+                type="text"
+                value={newKeyword}
+                onChange={e => setNewKeyword(e.target.value)}
+                placeholder="Nhập từ khóa..."
+                className="flex-1 bg-white/50 border border-slate-200 rounded-[1.5rem] px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-cyan/30 focus:border-cyan/50 transition-all font-medium text-navy placeholder:text-slate-300 shadow-inner-soft"
+              />
               <button
-                type="button"
-                onClick={() => setShowBulkAdd(!showBulkAdd)}
-                className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-cyan transition-colors ml-2"
+                type="submit"
+                className="p-3 bg-navy hover:bg-cyan text-white rounded-[1.5rem] transition-all shadow-glow hover:shadow-[0_0_20px_rgba(45,212,191,0.4)]"
               >
-                + Thêm nhiều từ khóa
+                <Plus size={18} />
               </button>
             </form>
 
+            <button
+              onClick={() => setShowBulkAdd(!showBulkAdd)}
+              className="mt-3 text-[10px] font-black text-slate-400 hover:text-cyan uppercase tracking-widest flex items-center gap-2 transition-colors"
+            >
+              <List size={13} /> + Thêm nhiều từ khóa
+            </button>
+
             {showBulkAdd && (
-              <div className="mb-6 space-y-3 animate-in slide-in-from-top-2">
+              <div className="mt-4 space-y-3 animate-in slide-in-from-top-2">
                 <textarea
                   value={bulkKeywords}
-                  onChange={(e) => setBulkKeywords(e.target.value)}
-                  placeholder="Dán danh sách từ khóa, mỗi dòng một từ..."
+                  onChange={e => setBulkKeywords(e.target.value)}
+                  placeholder="Mỗi dòng một từ khóa..."
                   rows={5}
-                  className="w-full p-4 bg-slate-50 border-none rounded-2xl text-sm font-bold text-navy outline-none focus:ring-4 focus:ring-cyan/10 transition-all placeholder:text-slate-300"
+                  className="w-full bg-white/50 border border-slate-200 rounded-2xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-cyan/30 font-medium text-navy placeholder:text-slate-300 shadow-inner-soft"
                 />
-                <div className="flex gap-2">
-                  <button onClick={handleBulkAdd} className="flex-1 py-3 bg-cyan text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-glow">
-                    Thêm tất cả
-                  </button>
-                  <button onClick={() => setShowBulkAdd(false)} className="px-4 py-3 bg-slate-100 text-slate-400 rounded-xl text-[10px] font-black uppercase tracking-widest">
-                    Hủy
-                  </button>
-                </div>
+                <button
+                  onClick={handleBulkAdd}
+                  className="w-full py-3 bg-navy text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-cyan transition-all shadow-glow"
+                >
+                  Xác nhận thêm
+                </button>
               </div>
             )}
 
-            <div className="max-h-[400px] overflow-y-auto custom-scrollbar space-y-2">
+            {/* Extension status */}
+            <div className="flex items-center gap-2 mt-5 mb-3">
+              <div className={`w-2 h-2 rounded-full transition-colors ${isExtensionReady ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]' : 'bg-slate-300'}`} />
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                Extension: {isExtensionReady ? 'Ready' : 'Not Detected'}
+              </span>
+            </div>
+
+            {/* Keyword list */}
+            <div className="max-h-[320px] overflow-y-auto custom-scrollbar space-y-1.5 mt-2">
               {keywords.length === 0 ? (
                 <p className="text-center py-10 text-slate-300 text-xs italic">Chưa có từ khóa nào</p>
               ) : (
                 keywords.map(kw => (
-                  <div key={kw.id} className="group flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 transition-colors">
-                    <span className="text-sm font-bold text-slate-600 group-hover:text-navy transition-colors">{kw.keyword}</span>
-                    <button onClick={() => handleDeleteKeyword(kw.id)} className="opacity-0 group-hover:opacity-100 p-2 text-rose-400 hover:text-rose-600 transition-all">
-                      <Trash2 size={14} />
+                  <div
+                    key={kw.id}
+                    className="group flex items-center justify-between px-4 py-3 bg-slate-50/80 hover:bg-white rounded-2xl hover:shadow-soft transition-all border border-transparent hover:border-slate-100"
+                  >
+                    <span className="text-sm font-bold text-navy truncate mr-3">{kw.keyword}</span>
+                    <button
+                      onClick={() => handleDeleteKeyword(kw.id)}
+                      className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-300 hover:text-rose-500 transition-all shrink-0"
+                    >
+                      <Trash2 size={13} />
                     </button>
                   </div>
                 ))
@@ -351,96 +313,202 @@ const RankCheckerTab: React.FC<RankCheckerTabProps> = ({ currentUser, availableB
             </div>
           </div>
 
-          {/* Extension Notice */}
-          <div className="p-6 rounded-[2rem] bg-indigo-50 border border-indigo-100">
-            <h4 className="text-[10px] font-black text-indigo-700 uppercase tracking-widest mb-2 flex items-center gap-2">
-              <ShieldAlert className="w-4 h-4" /> Yêu cầu Extension
+          {/* Extension note */}
+          <div className="premium-card p-6 border border-slate-200 shadow-soft bg-slate-50/50">
+            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-widest mb-3 flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-slate-400" /> Yêu cầu Extension
             </h4>
-            <p className="text-[11px] text-indigo-600/80 leading-relaxed">
-              Tính năng này yêu cầu **Moodbiz Rank Checker Extension** chạy ở chế độ ẩn danh để đảm bảo kết quả chính xác.
+            <p className="text-[13px] text-slate-500 leading-relaxed">
+              Tính năng này yêu cầu <strong>Moodbiz Rank Checker Extension</strong> chạy ở chế độ ẩn danh để đảm bảo kết quả chính xác.
             </p>
           </div>
         </div>
 
-        {/* Right: Ranking Table */}
-        <div className="lg:col-span-3 space-y-6">
-          <div className="premium-card min-h-[600px] border border-slate-100 bg-white shadow-premium overflow-hidden flex flex-col">
-            <div className="p-8 border-b border-slate-50 flex items-center justify-between bg-slate-50/30">
-              <div>
-                <h3 className="text-xl font-black text-navy tracking-tighter uppercase">Bảng xếp hạng</h3>
-                <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">Domain: <span className="text-cyan">{selectedBrand?.domain || 'Chưa cấu hình'}</span></p>
+        {/* ── Right Column ── */}
+        <div className="lg:col-span-2 space-y-6">
+
+          {/* Inline progress panel — hiện khi đang check */}
+          {isChecking && (
+            <div className="premium-card border border-slate-100 shadow-premium overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="px-8 py-5 border-b border-slate-100 bg-slate-50/30 flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-cyan/10 flex items-center justify-center shrink-0">
+                  <Monitor className="w-5 h-5 text-cyan" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-black text-navy uppercase tracking-[0.15em]">Đang kiểm tra thứ hạng</h3>
+                  {jobProgress && (
+                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-0.5 truncate">
+                      Job ID: {jobProgress.jobId}
+                    </p>
+                  )}
+                </div>
+                {jobProgress?.done && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-100">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wider">Hoàn tất</span>
+                  </div>
+                )}
               </div>
+
+              <div className="p-8 space-y-5">
+                {/* Progress bar */}
+                {jobProgress ? (
+                  <>
+                    <div className="flex items-center justify-between text-xs font-black text-navy uppercase">
+                      <span>Tiến độ: {jobProgress.completed} / {jobProgress.total}</span>
+                      <span className="text-cyan tabular-nums">{progressPct}%</span>
+                    </div>
+                    <div className="h-3 bg-slate-50 rounded-full overflow-hidden border border-slate-100 p-0.5">
+                      <div
+                        className="h-full bg-navy rounded-full transition-all duration-700 ease-out shadow-glow"
+                        style={{ width: `${progressPct}%` }}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-3 text-slate-400">
+                    <Loader2 className="w-4 h-4 animate-spin text-cyan" />
+                    <span className="text-xs font-bold uppercase tracking-widest animate-pulse">Khởi tạo job...</span>
+                  </div>
+                )}
+
+                {/* Console */}
+                <div className="bg-slate-900 rounded-2xl p-5 font-mono text-[11px] text-cyan/80 border border-white/5">
+                  <div className="flex items-center gap-2 mb-3 text-white/30 border-b border-white/5 pb-2">
+                    <div className="w-2 h-2 rounded-full bg-rose-500" />
+                    <div className="w-2 h-2 rounded-full bg-amber-500" />
+                    <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <span className="ml-2 uppercase tracking-widest text-[9px] font-black">Scraper Console</span>
+                  </div>
+                  <div className="space-y-1 h-36 overflow-y-auto custom-scrollbar">
+                    <p className="text-white/40">[SYSTEM] Initializing scraping engine...</p>
+                    {jobProgress ? (
+                      <>
+                        <p className="text-cyan">
+                          {jobProgress.done ? '[SUCCESS] Job completed successfully!' : '[PROCESS] Checking keywords...'}
+                        </p>
+                        {jobProgress.results?.slice(-8).map((r: any, i: number) => (
+                          <p key={i} className={r.position ? 'text-emerald-400' : 'text-slate-500'}>
+                            {`> ${r.keyword}: ${r.position ? `Top ${r.position}` : 'Not found'}`}
+                          </p>
+                        ))}
+                      </>
+                    ) : (
+                      <p className="text-cyan animate-pulse">[PROCESS] Waiting for extension...</p>
+                    )}
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-slate-400 font-medium italic text-center">
+                  Quá trình kiểm tra chạy ngầm qua Extension — bạn có thể tiếp tục sử dụng các tab khác.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Results card */}
+          <div className="premium-card border border-slate-100 shadow-premium overflow-hidden flex flex-col min-h-[500px]">
+
+            {/* Header */}
+            <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/30 flex items-center justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-black text-navy uppercase tracking-[0.15em] flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-emerald-500" /> Bảng xếp hạng
+                </h3>
+                <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">
+                  Domain: <span className="text-cyan">{selectedBrand?.domain || 'Chưa cấu hình'}</span>
+                </p>
+              </div>
+
               <button
                 onClick={startChecking}
-                disabled={loading || isChecking || keywords.length === 0}
-                className="px-8 py-4 bg-navy hover:bg-cyan text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all flex items-center gap-3 shadow-glow disabled:opacity-50"
+                disabled={loading || (isChecking && !jobProgress?.done) || !keywords.length}
+                className="px-6 py-3 bg-navy hover:bg-cyan text-white rounded-[1.5rem] font-bold text-[11px] uppercase tracking-[0.2em] transition-all flex items-center gap-2 shadow-glow hover:shadow-[0_0_24px_rgba(45,212,191,0.4)] disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isChecking ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                {isChecking ? 'Đang kiểm tra...' : 'Bắt đầu check'}
+                {isChecking && !jobProgress?.done
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Đang kiểm tra...</>
+                  : <><RefreshCw className="w-4 h-4" /> Bắt đầu check</>
+                }
               </button>
             </div>
 
-            <div className="flex-1 overflow-x-auto">
-              {loadingRankings ? (
-                <div className="h-full flex flex-col items-center justify-center py-20 text-slate-300 gap-4">
-                  <Loader2 className="w-10 h-10 animate-spin text-cyan/30" />
-                  <p className="text-xs font-black uppercase tracking-widest">Đang tải thứ hạng...</p>
+            {/* Body */}
+            <div className="flex-1 overflow-x-auto custom-scrollbar">
+              {loading ? (
+                <div className="h-full min-h-[380px] flex flex-col items-center justify-center text-slate-400 space-y-4">
+                  <Loader2 className="w-10 h-10 text-cyan animate-spin" />
+                  <p className="text-xs font-bold uppercase tracking-widest animate-pulse">Đang tải dữ liệu...</p>
                 </div>
               ) : rankings.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center py-20 text-center">
-                  <Search className="w-16 h-16 text-slate-100 mb-4" />
-                  <p className="text-slate-400 font-medium">Thêm từ khóa và nhấn "Bắt đầu check" để xem kết quả.</p>
+                <div className="h-full min-h-[380px] flex flex-col items-center justify-center p-12 text-center">
+                  <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-6">
+                    <Search className="w-8 h-8 text-slate-200" />
+                  </div>
+                  <h3 className="text-lg font-bold text-navy mb-2">Chưa có dữ liệu</h3>
+                  <p className="text-slate-400 text-sm max-w-xs leading-relaxed">
+                    Thêm từ khóa và nhấn <strong>"Bắt đầu check"</strong> để xem kết quả xếp hạng.
+                  </p>
                 </div>
               ) : (
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-slate-50/50">
-                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Từ khóa</th>
-                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Vị trí</th>
-                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Xu hướng</th>
-                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">URL kết quả</th>
-                      <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Cập nhật</th>
+                    <tr className="bg-slate-50/50 border-b border-slate-100">
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Từ khóa</th>
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Vị trí</th>
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Xu hướng</th>
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">URL Kết quả</th>
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Cập nhật</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {rankings.map(rank => (
-                      <tr key={rank.keywordId} className="hover:bg-slate-50/50 transition-colors group">
-                        <td className="px-8 py-6">
-                          <div className="font-bold text-navy">{rank.keyword}</div>
+                  <tbody>
+                    {rankings.map((rank, idx) => (
+                      <tr key={idx} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/30 transition-colors">
+                        <td className="px-6 py-5">
+                          <div className="font-bold text-navy text-sm">{rank.keyword}</div>
                         </td>
-                        <td className="px-8 py-6">
+                        <td className="px-6 py-5">
                           {rank.position ? (
-                            <div className={`
-                              inline-flex items-center justify-center w-10 h-10 rounded-xl font-black text-sm
-                              ${rank.position <= 3 ? 'bg-amber-100 text-amber-600 shadow-amber-100 shadow-glow' : 
-                                rank.position <= 10 ? 'bg-emerald-100 text-emerald-600' : 
-                                rank.position <= 30 ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-600'}
-                            `}>
+                            <div className={`inline-flex items-center justify-center w-10 h-10 rounded-xl font-black text-sm tabular-nums ${
+                              rank.position <= 3
+                                ? 'bg-amber-100 text-amber-700'
+                                : rank.position <= 10
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : rank.position <= 30
+                                    ? 'bg-blue-100 text-blue-700'
+                                    : 'bg-slate-100 text-slate-500'
+                            }`}>
                               #{rank.position}
                             </div>
                           ) : (
-                            <span className="text-slate-300 font-bold italic">N/A</span>
+                            <span className="text-slate-300 font-bold text-sm italic">N/A</span>
                           )}
                         </td>
-                        <td className="px-8 py-6">
-                           <div className="flex items-center gap-2">
-                             {/* Simple trend indicator - could be enhanced with actual history logic */}
-                             <div className="w-16 h-1 bg-slate-100 rounded-full overflow-hidden">
-                                <div className="w-full h-full bg-cyan/20" />
-                             </div>
-                             <span className="text-[10px] font-black text-slate-400 uppercase">Steady</span>
-                           </div>
+                        <td className="px-6 py-5">
+                          <div className="flex items-center gap-1.5 text-slate-400">
+                            <Minus size={14} />
+                            <span className="text-[10px] font-black uppercase tracking-wider">Steady</span>
+                          </div>
                         </td>
-                        <td className="px-8 py-6">
+                        <td className="px-6 py-5">
                           {rank.url ? (
-                            <a href={rank.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-xs font-bold text-cyan hover:underline truncate max-w-[200px]">
-                              {new URL(rank.url).pathname} <ExternalLink size={12} />
+                            <a
+                              href={rank.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 text-xs font-bold text-cyan hover:text-navy hover:underline truncate max-w-[180px] transition-colors"
+                            >
+                              {(() => { try { return new URL(rank.url).pathname || '/'; } catch { return rank.url; } })()}
+                              <ExternalLink size={11} />
                             </a>
-                          ) : '—'}
+                          ) : (
+                            <span className="text-slate-300 text-xs">—</span>
+                          )}
                         </td>
-                        <td className="px-8 py-6">
+                        <td className="px-6 py-5">
                           <div className="text-[10px] font-bold text-slate-400">
-                            {rank.checkedAt ? new Date(rank.checkedAt).toLocaleString() : 'Chưa check'}
+                            {rank.checkedAt
+                              ? new Date(rank.checkedAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                              : 'Chưa check'}
                           </div>
                         </td>
                       </tr>
@@ -452,88 +520,6 @@ const RankCheckerTab: React.FC<RankCheckerTabProps> = ({ currentUser, availableB
           </div>
         </div>
       </div>
-
-      {/* Progress Modal */}
-      {showProgress && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-navy/80 backdrop-blur-md animate-in fade-in duration-500">
-          <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-500 border border-white/20">
-            <div className="px-10 py-8 border-b border-slate-50 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-cyan text-white rounded-2xl shadow-glow">
-                  <Monitor size={20} />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black text-navy uppercase tracking-tighter">Đang kiểm tra thứ hạng</h3>
-                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-0.5">Job ID: {jobId}</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowProgress(false)} 
-                className="p-3 hover:bg-slate-50 rounded-2xl text-slate-300 hover:text-navy transition-all"
-              >
-                <ArrowRight className="rotate-180" />
-              </button>
-            </div>
-
-            <div className="p-10 space-y-8">
-              {jobProgress ? (
-                <>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between text-xs font-black uppercase tracking-widest text-slate-500">
-                      <span>Tiến độ: {jobProgress.completed} / {jobProgress.total}</span>
-                      <span>{Math.round((jobProgress.completed / jobProgress.total) * 100)}%</span>
-                    </div>
-                    <div className="h-4 bg-slate-100 rounded-full overflow-hidden p-1 shadow-inner-soft">
-                      <div 
-                        className="h-full bg-gradient-to-r from-cyan to-blue-500 rounded-full transition-all duration-500 shadow-glow" 
-                        style={{ width: `${(jobProgress.completed / jobProgress.total) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-900 rounded-[2rem] p-6 font-mono text-[11px] text-emerald-400 space-y-2 h-64 overflow-y-auto custom-scrollbar shadow-2xl border border-white/5">
-                    <div className="opacity-50 text-slate-500 font-bold mb-4">[SYSTEM] Initializing scraping engine...</div>
-                    {jobProgress.results.slice(-8).map((res: any, i: number) => (
-                      <div key={i} className="flex gap-3 animate-in slide-in-from-left-2">
-                        <span className="text-slate-600 font-black">[{new Date(res.checkedAt).toLocaleTimeString()}]</span>
-                        <span>{res.keyword}</span>
-                        <span className="text-cyan font-black">→</span>
-                        <span className={res.position ? 'text-amber-400' : 'text-slate-500 italic'}>
-                          {res.position ? `#${res.position}` : 'Không tìm thấy'}
-                        </span>
-                      </div>
-                    ))}
-                    {jobProgress.done && (
-                      <div className="pt-4 text-cyan font-black flex items-center gap-2">
-                        <CheckCircle2 size={14} /> TẤT CẢ HOÀN TẤT
-                      </div>
-                    )}
-                  </div>
-
-                  {jobProgress.done ? (
-                    <button
-                      onClick={() => setShowProgress(false)}
-                      className="w-full py-5 bg-navy text-white rounded-2xl font-black text-xs uppercase tracking-[0.3em] shadow-glow hover:bg-slate-800 transition-all"
-                    >
-                      Đóng & Xem kết quả
-                    </button>
-                  ) : (
-                    <div className="flex items-center justify-center gap-4 text-[10px] font-black text-slate-400 uppercase tracking-widest animate-pulse">
-                      <Loader2 className="w-4 h-4 animate-spin text-cyan" />
-                      Đang xử lý trong cửa sổ ẩn danh...
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="py-20 flex flex-col items-center justify-center gap-4">
-                  <Loader2 className="w-12 h-12 text-cyan animate-spin" />
-                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Đang khởi tạo job...</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
