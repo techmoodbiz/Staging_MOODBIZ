@@ -5,8 +5,19 @@ let pollTimer = null;
 let foundCount = 0;
 
 let popupAuthToken = null;
-// Đọc token đã lưu từ chrome.storage.local khi popup mở
-chrome.storage.local.get(['auth_token'], (r) => { popupAuthToken = r.auth_token || null; });
+// Context brand/project được lưu bởi content-bridge khi user chọn brand/project
+let jobContext = { brandId: null, brandName: '', projectId: null, projectName: '', domain: '' };
+
+// Đọc storage dưới dạng Promise — phải xong trước khi refreshStatus chạy
+function loadStorage() {
+  return new Promise(resolve => {
+    chrome.storage.local.get(['auth_token', 'job_context'], (r) => {
+      popupAuthToken = r.auth_token || null;
+      if (r.job_context) jobContext = r.job_context;
+      resolve();
+    });
+  });
+}
 
 function popupHeaders() {
   const h = { 'Content-Type': 'application/json' };
@@ -19,7 +30,7 @@ const $ = (id) => document.getElementById(id);
 // ─── Server health ────────────────────────────────────────
 async function checkServer() {
   try {
-    const res = await fetch(`${SERVER_URL}/api/health`, { signal: AbortSignal.timeout(3000), headers: popupHeaders() });
+    const res = await fetch(`${SERVER_URL}/api/health`, { signal: AbortSignal.timeout(4000) });
     if (res.ok) {
       $('server-dot').className = 'dot online';
       $('server-text').textContent = 'Server OK';
@@ -89,7 +100,7 @@ function addLogEntry(keyword, position) {
 // ─── Refresh status từ server ─────────────────────────────
 async function refreshStatus() {
   try {
-    const res = await fetch(`${SERVER_URL}/api/check-queue/status`, { headers: popupHeaders() });
+    const res = await fetch(`${SERVER_URL}/api/rank-checker?action=get-job-status`, { headers: popupHeaders() });
     if (!res.ok) return;
     const data = await res.json();
 
@@ -106,15 +117,37 @@ async function refreshStatus() {
       $('start-btn').disabled = true;
       $('start-btn').textContent = '⏳ Đang chạy...';
       $('stop-btn').disabled = false;
+      $('stop-btn').textContent = '■ Dừng';
+      applyContextToCheckingState();
       startPollingStatus();
     } else if (data.pendingJobs > 0) {
-      const job = data.jobs[0];
-      showSection('job-ready');
-      $('job-domain').textContent = job.domain;
-      $('job-meta').textContent = `${job.total} từ khóa • ${job.pending} chưa kiểm tra`;
-      $('start-btn').disabled = false;
-      $('start-btn').textContent = '▶ Bắt đầu kiểm tra';
-      $('stop-btn').disabled = true;
+      // Lọc job khớp với brand/project đang chọn trên dashboard
+      // Ưu tiên match projectId (chính xác nhất), fallback về brandId
+      const matchJob = (() => {
+        if (jobContext.projectId)
+          return data.jobs.find(j => j.projectId === jobContext.projectId);
+        if (jobContext.brandId)
+          return data.jobs.find(j => j.brandId === jobContext.brandId);
+        return data.jobs[0];
+      })();
+
+      if (!matchJob) {
+        // Có job nhưng thuộc brand khác → không hiện cho brand này
+        showSection('empty-state');
+        $('start-btn').disabled = false;
+        $('start-btn').textContent = '▶ Bắt đầu kiểm tra';
+        $('stop-btn').disabled = true;
+      } else {
+        showSection('job-ready');
+        $('job-brand').textContent   = jobContext.brandName   || '—';
+        $('job-project').textContent = jobContext.projectName || '—';
+        $('job-domain').textContent  = matchJob.domain || jobContext.domain || '—';
+        $('job-meta').textContent = `${matchJob.total} từ khóa • ${matchJob.pending} chưa kiểm tra`;
+        $('start-btn').disabled = false;
+        $('start-btn').textContent = '▶ Bắt đầu kiểm tra';
+        $('stop-btn').disabled = false;
+        $('stop-btn').textContent = '✕ Hủy';
+      }
     } else {
       showSection('empty-state');
       $('start-btn').disabled = false;
@@ -126,6 +159,17 @@ async function refreshStatus() {
   }
 }
 
+// ─── Điền context brand/project vào ctx-bar (checking-state) ────────────────
+function applyContextToCheckingState(s = null) {
+  // Ưu tiên dữ liệu live từ progressState, fallback về storage
+  const bn = s?.brandName   || jobContext.brandName   || '—';
+  const pn = s?.projectName || jobContext.projectName || '—';
+  const dm = s?.currentDomain || jobContext.domain     || '';
+  $('ctx-brand').textContent   = bn;
+  $('ctx-project').textContent = pn;
+  $('ctx-domain').textContent  = dm;
+}
+
 // ─── Poll trạng thái background mỗi 1.5s để update UI ────
 function startPollingStatus() {
   if (pollTimer) return;
@@ -134,6 +178,9 @@ function startPollingStatus() {
     try {
       const s = await chrome.runtime.sendMessage({ type: 'GET_STATUS' });
       if (!s) return;
+
+      // Cập nhật context bar (brand › project · domain)
+      applyContextToCheckingState(s);
 
       // Cập nhật tiến trình
       if (s.total > 0 || s.checked > 0) {
@@ -188,7 +235,7 @@ async function handleStart() {
   const ok = await checkServer();
   if (!ok) { resetBtn(); alert('Server offline!'); return; }
 
-  const res = await fetch(`${SERVER_URL}/api/check-queue/status`, { headers: popupHeaders() }).catch(() => null);
+  const res = await fetch(`${SERVER_URL}/api/rank-checker?action=get-job-status`, { headers: popupHeaders() }).catch(() => null);
   if (!res?.ok) { resetBtn(); alert('Không kết nối queue!'); return; }
   const data = await res.json();
   if (data.pendingJobs === 0) {
@@ -253,23 +300,29 @@ async function handleStart() {
 }
 
 async function handleStop() {
-  // Background không có cơ chế dừng giữa chừng hiện tại.
-  // Chỉ dọn dẹp UI và để background tự hoàn thành keyword đang xử lý rồi dừng queue.
   $('stop-btn').disabled = true;
-  setStatus('⏹️', 'Đang dừng sau keyword hiện tại...', 'idle');
+  $('stop-btn').textContent = '⏳';
 
-  // Xóa tất cả job pending trên server để background không lấy keyword tiếp
+  // Gửi STOP signal cho background để thoát processing loop
   try {
-    const res = await fetch(`${SERVER_URL}/api/check-queue/status`, { headers: popupHeaders() });
-    if (res.ok) {
-      const data = await res.json();
-      for (const job of data.jobs) {
-        await fetch(`${SERVER_URL}/api/check-queue/${job.jobId}`, {
-          method: 'DELETE', headers: popupHeaders(),
-        }).catch(() => {});
-      }
-    }
+    await chrome.runtime.sendMessage({ type: 'STOP_CHECKING' });
   } catch(e) {}
+
+  // Hủy job pending trên server
+  try {
+    await fetch(`${SERVER_URL}/api/rank-checker?action=cancel-job`, {
+      method: 'POST', headers: popupHeaders(),
+    });
+  } catch(e) {}
+
+  // Dừng polling
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+
+  showSection('empty-state');
+  $('start-btn').disabled = false;
+  $('start-btn').textContent = '▶ Bắt đầu kiểm tra';
+  $('stop-btn').disabled = true;
+  $('stop-btn').textContent = '■ Dừng';
 }
 
 // ─── Init ─────────────────────────────────────────────────
@@ -277,9 +330,17 @@ async function init() {
   showSection('empty-state');
   $('start-btn').disabled = true;
   $('stop-btn').disabled = true;
+  // Phải load storage trước — jobContext cần có brandId để lọc job đúng
+  await loadStorage();
   const ok = await checkServer();
   if (ok) await refreshStatus();
   else { showSection('empty-state'); $('start-btn').disabled = false; }
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+  init();
+  // Wire up button events (CSP-compliant: no inline onclick allowed in MV3)
+  document.getElementById('start-btn')?.addEventListener('click', handleStart);
+  document.getElementById('stop-btn')?.addEventListener('click', handleStop);
+  document.getElementById('server-badge')?.addEventListener('click', retryServer);
+});

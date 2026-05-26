@@ -3,7 +3,7 @@ import {
   Zap, Handshake, Target, Shield, LayoutDashboard, PenTool,
   Activity, FileText, BarChart2, Settings, Users, Building2,
   BookOpen, Package, ShieldAlert, FileSearch, Target as TargetIcon,
-  Languages, BrainCircuit, Award, ShoppingBag, FileCode, UserCircle, Search
+  Languages, BrainCircuit, Award, ShoppingBag, FileCode, UserCircle, Search, Globe
 } from 'lucide-react';
 
 export const THEME = {
@@ -47,6 +47,29 @@ export const PLATFORM_CONFIGS: Record<string, { desc: string, audit_rules: strin
   }
 };
 
+export const FEATURE_PERMISSIONS = [
+  { group: 'Creator Tools', items: [
+    { id: 'generator',     label: 'Content Generator' },
+    { id: 'research',      label: 'AI Research' },
+    { id: 'auditor',       label: 'Voice Auditor' },
+    { id: 'seo_inspector', label: 'SEO URL Inspector' },
+    { id: 'rank_checker',  label: 'Google Rank Checker' },
+  ]},
+  { group: 'Archives', items: [
+    { id: 'generations', label: 'Generator History' },
+    { id: 'audits',      label: 'Auditor History' },
+  ]},
+  { group: 'Organization', items: [
+    { id: 'analytics',  label: 'Auditor Analytics' },
+    { id: 'products',   label: 'Products & Services' },
+    { id: 'markets',    label: 'Market & Industries' },
+    { id: 'personas',   label: 'Audience Personas' },
+    { id: 'guidelines', label: 'Brand Guidelines' },
+  ]},
+];
+
+export const ALL_FEATURE_IDS = FEATURE_PERMISSIONS.flatMap(g => g.items.map(i => i.id));
+
 export const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ['admin', 'brand_owner', 'content_creator', 'viewer'] },
 
@@ -55,7 +78,7 @@ export const NAV_ITEMS = [
   { id: 'research', label: 'AI Research', icon: Search, path: '/research', roles: ['admin', 'brand_owner', 'content_creator'] },
   { id: 'auditor', label: 'Voice Auditor', icon: Activity, path: '/auditor', roles: ['admin', 'brand_owner', 'content_creator'] },
   { id: 'seo_inspector', label: 'SEO URL Inspector', icon: FileSearch, path: '/seo-inspector', roles: ['admin', 'brand_owner', 'content_creator'] },
-  { id: 'rank_checker', label: 'Google Rank Checker', icon: Activity, path: '/rank-checker', roles: ['admin', 'brand_owner', 'content_creator'] },
+  { id: 'rank_checker', label: 'Google Rank Checker', icon: Globe, path: '/rank-checker', roles: ['admin', 'brand_owner', 'content_creator'] },
 
   { type: 'header', label: 'Archives', roles: ['admin', 'brand_owner', 'content_creator', 'viewer'] },
   { id: 'generations', label: 'Generator History', icon: BookOpen, path: '/generations', roles: ['admin', 'brand_owner', 'content_creator', 'viewer'] },

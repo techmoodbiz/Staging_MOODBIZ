@@ -10,6 +10,7 @@ export interface User {
   role: 'admin' | 'brand_owner' | 'content_creator' | 'viewer';
   ownedBrandIds?: string[];
   assignedBrandIds?: string[];
+  featurePermissions?: string[];
   avatar?: string;
   name?: string;
   id?: string;
@@ -265,29 +266,56 @@ export interface ScrapeResponse {
 // Rank Checker Interfaces
 // ==================
 
+export interface RankGroup {
+  id: string;
+  name: string;
+  userId: string;
+  createdAt: any;
+}
+
+export interface RankProject {
+  id: string;
+  name: string;
+  domain: string;
+  groupId?: string | null;
+  userId: string;
+  createdAt: any;
+}
+
 export interface RankKeyword {
   id: string;
-  brand_id: string;
+  projectId?: string;
+  brandId?: string;
   keyword: string;
-  created_at: any;
+  createdAt: any;
 }
 
 export interface RankHistory {
   id: string;
-  keyword_id: string;
-  brand_id: string;
+  keywordId: string;
+  keyword: string;
+  brandId: string;
   position: number | null;
   url: string | null;
-  checked_at: any;
+  checkedAt: any;
 }
 
 export interface RankJob {
   id: string;
-  brand_id: string;
+  brandId: string;
   domain: string;
   total: number;
-  pending_keywords: string[]; // List of keyword IDs
-  completed_results: any[];
+  pendingKeywords: string[]; 
+  completedResults: any[];
   status: 'pending' | 'processing' | 'completed' | 'cancelled';
-  created_at: any;
+  createdAt: any;
+}
+export interface RankingResult {
+  keywordId: string;
+  keyword: string;
+  position: number | null;
+  url: string | null;
+  checkedAt: string | null;
+  bestPosition?: number | null;
+  previousPosition?: number | null;
 }

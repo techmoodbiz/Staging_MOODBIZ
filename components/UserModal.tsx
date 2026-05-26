@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Check, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { User, Brand } from '../types';
+import { FEATURE_PERMISSIONS, ALL_FEATURE_IDS } from '../constants';
 
 interface UserModalProps {
   isOpen: boolean;
@@ -21,6 +22,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, user, br
   const [password, setPassword] = useState('');
   const [ownedBrandIds, setOwnedBrandIds] = useState<string[]>(user?.ownedBrandIds || []);
   const [assignedBrandIds, setAssignedBrandIds] = useState<string[]>(user?.assignedBrandIds || []);
+  const [featurePermissions, setFeaturePermissions] = useState<string[]>(user?.featurePermissions ?? ALL_FEATURE_IDS);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -30,6 +32,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, user, br
       setRole(user.role || 'content_creator');
       setOwnedBrandIds(user.ownedBrandIds || []);
       setAssignedBrandIds(user.assignedBrandIds || []);
+      setFeaturePermissions(user.featurePermissions ?? ALL_FEATURE_IDS);
       setPassword('');
     } else {
       setName('');
@@ -38,9 +41,23 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, user, br
       setPassword('');
       setOwnedBrandIds([]);
       setAssignedBrandIds([]);
+      setFeaturePermissions(ALL_FEATURE_IDS);
     }
     setIsSaving(false);
   }, [user, isOpen]);
+
+  const handleToggleFeature = (featureId: string) => {
+    setFeaturePermissions(prev =>
+      prev.includes(featureId) ? prev.filter(id => id !== featureId) : [...prev, featureId]
+    );
+  };
+
+  const handleToggleGroup = (groupIds: string[]) => {
+    const allEnabled = groupIds.every(id => featurePermissions.includes(id));
+    setFeaturePermissions(prev =>
+      allEnabled ? prev.filter(id => !groupIds.includes(id)) : [...new Set([...prev, ...groupIds])]
+    );
+  };
 
   const handleToggleBrand = (brandId: string) => {
     if (assignedBrandIds.includes(brandId)) {
@@ -69,6 +86,7 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, user, br
         name, email, password, role,
         ownedBrandIds: role === "brand_owner" ? ownedBrandIds : [],
         assignedBrandIds: role === "content_creator" ? assignedBrandIds : [],
+        featurePermissions: role === 'admin' ? ALL_FEATURE_IDS : featurePermissions,
       });
     } catch (e) {
       console.error(e);
@@ -162,6 +180,55 @@ const UserModal: React.FC<UserModalProps> = ({ isOpen, onClose, onSave, user, br
                     <span className={`text-sm font-medium ${assignedBrandIds.includes(brand.id) ? 'text-[#102d62]' : 'text-slate-600'}`}>{brand.name}</span>
                   </label>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {role !== 'admin' && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5 ml-1">
+                <label className={labelClass + ' mb-0'}>{t('admin.users.modal.feature_permissions')}</label>
+                <button
+                  type="button"
+                  onClick={() => setFeaturePermissions(featurePermissions.length === ALL_FEATURE_IDS.length ? [] : ALL_FEATURE_IDS)}
+                  className="text-[10px] font-bold text-[#01ccff] hover:underline uppercase tracking-wide"
+                  disabled={isSaving}
+                >
+                  {featurePermissions.length === ALL_FEATURE_IDS.length ? t('admin.users.modal.deselect_all') : t('admin.users.modal.select_all')}
+                </button>
+              </div>
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-3">
+                {FEATURE_PERMISSIONS.map(group => {
+                  const groupIds = group.items.map(i => i.id);
+                  const allGroupEnabled = groupIds.every(id => featurePermissions.includes(id));
+                  const someGroupEnabled = groupIds.some(id => featurePermissions.includes(id));
+                  return (
+                    <div key={group.group}>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleGroup(groupIds)}
+                        className="flex items-center gap-2 mb-1.5 w-full text-left"
+                        disabled={isSaving}
+                      >
+                        <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${allGroupEnabled ? 'bg-[#102d62] border-[#102d62]' : someGroupEnabled ? 'bg-[#102d62]/30 border-[#102d62]/40' : 'bg-white border-slate-300'}`}>
+                          {(allGroupEnabled || someGroupEnabled) && <Check size={10} className="text-white" />}
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">{group.group}</span>
+                      </button>
+                      <div className="grid grid-cols-2 gap-1 pl-2">
+                        {group.items.map(item => (
+                          <label key={item.id} className={`flex items-center gap-2 cursor-pointer px-2.5 py-2 rounded-lg transition-colors ${featurePermissions.includes(item.id) ? 'bg-white shadow-sm border border-slate-100' : 'hover:bg-white/60'}`}>
+                            <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${featurePermissions.includes(item.id) ? 'bg-[#01ccff] border-[#01ccff]' : 'bg-white border-slate-300'}`}>
+                              {featurePermissions.includes(item.id) && <Check size={10} className="text-white" />}
+                            </div>
+                            <input type="checkbox" checked={featurePermissions.includes(item.id)} onChange={() => handleToggleFeature(item.id)} className="hidden" disabled={isSaving} />
+                            <span className={`text-xs font-medium leading-tight ${featurePermissions.includes(item.id) ? 'text-[#102d62]' : 'text-slate-500'}`}>{item.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

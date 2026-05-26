@@ -6,6 +6,7 @@
 importScripts('config.js');
 
 let isProcessing = false;
+let shouldStop = false;
 let incognitoWindowId = null;
 let incognitoTabId    = null; // tab persistent trong cửa sổ ẩn danh — reuse thay vì tạo mới
 let authToken = null; // JWT token từ dashboard
@@ -22,6 +23,26 @@ let progressState = {
 
 // Đọc token đã lưu khi service worker khởi động lại
 chrome.storage.local.get(['auth_token'], (r) => { authToken = r.auth_token || null; });
+
+// ─── Locale detection ─────────────────────────────────────────────────────────
+// Dùng chrome.i18n.getUILanguage() để lấy ngôn ngữ/quốc gia của trình duyệt user.
+// Ví dụ: "vi" → hl=vi&gl=VN | "en-US" → hl=en&gl=US | "ja" → hl=ja&gl=JP
+const _browserLocale = (() => {
+  const raw = (chrome.i18n.getUILanguage() || 'en').trim();
+  const parts = raw.split(/[-_]/);
+  const hl = parts[0].toLowerCase();
+  const explicitCountry = parts[1]?.toUpperCase() || null;
+  // Ánh xạ ngôn ngữ → quốc gia mặc định khi locale không có country code (vd: "vi", "ja")
+  const langToCountry = {
+    vi: 'VN', ja: 'JP', ko: 'KR', th: 'TH', zh: 'CN',
+    fr: 'FR', de: 'DE', es: 'ES', pt: 'BR', ru: 'RU',
+    ar: 'SA', hi: 'IN', id: 'ID', ms: 'MY', tl: 'PH',
+    nl: 'NL', it: 'IT', pl: 'PL', tr: 'TR', sv: 'SE',
+  };
+  const gl = explicitCountry || langToCountry[hl] || 'US';
+  console.log(`[Locale] raw="${raw}" → hl=${hl} gl=${gl}`);
+  return { hl, gl };
+})();
 
 // Helper: tạo headers với auth token
 function apiHeaders(extra = {}) {
@@ -50,8 +71,11 @@ async function getIncognitoWindow() {
     incognitoTabId    = null;
   }
   try {
+    // Tạo thẳng ở state 'minimized' để tránh flash đen khi window xuất hiện.
+    // Chrome đôi khi bỏ qua state này trên một số OS → gọi thêm update() ngay sau
+    // để đảm bảo window không hiện ra màn hình người dùng.
     const win = await chrome.windows.create({
-      url: 'about:blank', incognito: true, state: 'normal', focused: false,
+      url: 'about:blank', incognito: true, state: 'minimized', focused: false,
     });
     if (!win.incognito) {
       await chrome.windows.remove(win.id).catch(() => {});
@@ -60,6 +84,8 @@ async function getIncognitoWindow() {
     }
     incognitoWindowId = win.id;
     incognitoTabId    = win.tabs?.[0]?.id || null;
+    // Belt-and-suspenders: minimize ngay lập tức phòng Chrome tạo state 'normal' trước
+    chrome.windows.update(win.id, { state: 'minimized', focused: false }).catch(() => {});
     return incognitoWindowId;
   } catch(e) {
     return null;
@@ -75,7 +101,8 @@ async function closeIncognitoWindow() {
 }
 
 function keepAlive() {
-  chrome.runtime.getPlatformInfo(() => {});
+  // chrome.storage write đáng tin cậy hơn getPlatformInfo để giữ SW không bị terminate
+  chrome.storage.local.set({ _sw_heartbeat: Date.now() });
 }
 
 // ─── Google result extraction (injected vào tab Google) ───────────────────────
@@ -99,6 +126,9 @@ async function extractRankingFromPage(targetDomain) {
       (pageUrl.includes('sei=') && !html.includes('id="rso"')) ||
       pageTitle.includes('Giới thiệu về trang') ||
       pageTitle.includes('Before you continue') ||
+      pageTitle.includes('Error 403') ||
+      html.includes('does not have permission') ||
+      html.includes('That\'s an error') ||
       (html.length < 8000 && (html.includes('recaptcha') || html.includes('captcha')));
 
     if (isCaptcha) {
@@ -106,14 +136,14 @@ async function extractRankingFromPage(targetDomain) {
     }
 
     // Scroll để kích hoạt lazy-load
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 120));
     const ph = Math.max(document.body.scrollHeight, 3000);
-    for (let i = 1; i <= 6; i++) {
-      window.scrollTo(0, (ph / 6) * i);
-      await new Promise(r => setTimeout(r, 120));
+    for (let i = 1; i <= 3; i++) {
+      window.scrollTo(0, (ph / 3) * i);
+      await new Promise(r => setTimeout(r, 60));
     }
     window.scrollTo(0, 0);
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 120));
 
     // ── Helpers ────────────────────────────────────────────────────────────
     const norm = d => {
@@ -167,22 +197,33 @@ async function extractRankingFromPage(targetDomain) {
     s.UWckNb = toLinks(rso.querySelectorAll('a[jsname="UWckNb"]'));
     s.yuRUbf = toLinks(rso.querySelectorAll('.yuRUbf a[href^="http"]'));
     s.h3     = toLinks(Array.from(rso.querySelectorAll('h3')).map(h => h.closest('a')).filter(Boolean));
-    const topGsDom = Array.from(rso.querySelectorAll('div.g')).filter(g => !g.parentElement?.closest('div.g'));
-    s.divG   = toLinks(topGsDom.map(g => g.querySelector('a[href^="http"]')).filter(Boolean));
+    // divG: dùng div.A6K0A[data-rpos] — Google DOM mới (div.g đã bị xóa hoàn toàn)
+    // Loại slot có PAA signals nhúng bên trong (.MBeuO / .dnXCYb / [jsname="N760b"])
+    // để count khớp với SEOquake và tránh đếm PAA-hybrid slot như organic thường
+    const isPAASlot = el =>
+      !!el.querySelector('.related-question-pair, [jsname="N760b"], .dnXCYb, .MBeuO');
+    const organicA6K0A = Array.from(rso.querySelectorAll('div.A6K0A[data-rpos]'))
+      .filter(el => !isInsideAd(el) && !!el.querySelector('h3') && !isPAASlot(el));
+    s.divG = toLinks(organicA6K0A.map(g => g.querySelector('a[jsname="UWckNb"], a[href^="http"]')).filter(Boolean));
     s.ping   = toLinks(rso.querySelectorAll('a[ping][href^="http"]'));
 
     const debugCounts = Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v.length]));
 
     // ── Bước 1: Tìm target theo thứ tự ưu tiên strategy ─────────────────
+    // Ưu tiên URL sạch (không có #:~:text=) để tránh nhầm AI Overview citation
+    // với organic result thật. AI Overview dùng text-fragment URL để highlight nguồn.
     let targetLink = null, bestKey = 'none';
     for (const key of ['UWckNb', 'yuRUbf', 'h3', 'divG', 'ping']) {
+      let cleanLnk = null, fragLnk = null;
       for (const lnk of s[key]) {
         const h = norm(lnk.hostname);
         if (h === target || h.endsWith('.' + target) || target.endsWith('.' + h)) {
-          targetLink = lnk; bestKey = key; break;
+          if (!lnk.url.includes('#:~:text=')) { cleanLnk = lnk; break; }
+          if (!fragLnk) fragLnk = lnk;
         }
       }
-      if (targetLink) break;
+      const picked = cleanLnk || fragLnk;
+      if (picked) { targetLink = picked; bestKey = key; break; }
     }
 
     if (!targetLink) {
@@ -197,44 +238,48 @@ async function extractRankingFromPage(targetDomain) {
       return { found: false, position: null, totalResults: best.length, captcha: false, debug: debugCounts, strategy: bKey, foundHostnames };
     }
 
-    // ── Bước 2: Đếm vị trí bằng div.g slot counting ──────────────────────
-    // Chính xác hơn array index vì Google có featured snippet, knowledge panel
-    // chiếm slot nhưng không có jsname="UWckNb" → index bị lệch
+    // ── Bước 2: Đếm vị trí organic theo DOM order ───────────────────────
     let position = null;
+    const debugBefore = []; // để log ra service worker
     try {
-      let targetG = targetLink.el.closest('div.g');
-      if (targetG) {
-        while (targetG.parentElement?.closest('div.g')) {
-          targetG = targetG.parentElement.closest('div.g');
+      const mainResults = Array.from(rso.querySelectorAll('.yuRUbf'))
+        .filter(el => !isInsideAd(el) && !!el.querySelector('a[jsname="UWckNb"]'));
+      for (let i = 0; i < mainResults.length; i++) {
+        if (mainResults[i].contains(targetLink.el)) {
+          position = i + 1;
+          console.log('[RankChecker] yuRUbf+UWckNb: position=' + position + '/' + mainResults.length);
+          break;
         }
-        const allTopGs = Array.from(rso.querySelectorAll('div.g'))
-          .filter(g => !g.parentElement?.closest('div.g') && !isInsideAd(g));
-        const idx = allTopGs.indexOf(targetG);
-        if (idx >= 0) {
-          position = idx + 1;
-          console.log('[RankChecker] div.g slot: idx=' + idx + ' → position=' + position);
-        }
+        // Thu thập debug: hostname + class của parent block
+        const a = mainResults[i].querySelector('a[jsname="UWckNb"]');
+        const blockCls = (mainResults[i].closest('[class]') || mainResults[i].parentElement)?.className || '';
+        debugBefore.push((a ? (new URL(a.href).hostname || a.href.slice(0,40)) : '?') + ' [' + String(blockCls).split(' ').slice(0,3).join(' ') + ']');
       }
     } catch(e) {
-      console.warn('[RankChecker] div.g counting error:', e.message);
+      console.warn('[RankChecker] yuRUbf+UWckNb error:', e.message);
     }
 
-    // Fallback: dùng index trong mảng strategy nếu div.g counting thất bại
+    // Fallback: đếm hostname trong divG → yuRUbf → bestKey
     if (!position) {
-      const arr = s[bestKey];
-      for (let i = 0; i < arr.length; i++) {
-        const h = norm(arr[i].hostname);
+      const fallbackArr = s.divG.length >= 3 ? s.divG
+                        : s.yuRUbf.length >= 3 ? s.yuRUbf
+                        : s[bestKey];
+      const fallbackKey = s.divG.length >= 3 ? 'divG' : s.yuRUbf.length >= 3 ? 'yuRUbf' : bestKey;
+      for (let i = 0; i < fallbackArr.length; i++) {
+        const h = norm(fallbackArr[i].hostname);
         if (h === target || h.endsWith('.' + target) || target.endsWith('.' + h)) {
           position = i + 1; break;
         }
       }
+      if (position) console.log('[RankChecker] fallback via ' + fallbackKey + ': position=' + position);
     }
 
-    const totalG = Array.from(rso.querySelectorAll('div.g'))
-      .filter(g => !g.parentElement?.closest('div.g') && !isInsideAd(g)).length;
+    const totalG = Array.from(rso.querySelectorAll('div.A6K0A[data-rpos]'))
+      .filter(el => !isInsideAd(el) && !!el.querySelector('a[jsname="UWckNb"]') && !isPAASlot(el)).length;
 
     console.log('[RankChecker] FOUND | strategy:', bestKey, '| position:', position, '| totalSlots:', totalG);
     console.log('[RankChecker] debug counts:', JSON.stringify(debugCounts));
+    if (debugBefore.length) console.log('[RankChecker] results before target:', debugBefore.join(' | '));
 
     return {
       found: true,
@@ -242,7 +287,7 @@ async function extractRankingFromPage(targetDomain) {
       url: targetLink.url,
       totalResults: totalG || s[bestKey].length,
       captcha: false,
-      debug: debugCounts,
+      debug: { ...debugCounts, debugBefore },
       strategy: bestKey,
     };
 
@@ -252,6 +297,30 @@ async function extractRankingFromPage(targetDomain) {
 }
 
 // ─── Tab helpers ──────────────────────────────────────────────────────────────
+async function ensureIncognitoTab() {
+  // Kiểm tra tab còn sống không
+  if (incognitoTabId) {
+    try { await chrome.tabs.get(incognitoTabId); return true; }
+    catch(e) { incognitoTabId = null; }
+  }
+  // Tab đã chết — thử tạo lại trong cùng window
+  if (incognitoWindowId) {
+    try {
+      await chrome.windows.get(incognitoWindowId);
+      const t = await chrome.tabs.create({ url: 'about:blank', windowId: incognitoWindowId, active: false });
+      incognitoTabId = t.id;
+      console.log('🔄 Tab được tạo lại (tabId:', t.id, ')');
+      return true;
+    } catch(e) {
+      incognitoWindowId = null;
+      incognitoTabId = null;
+    }
+  }
+  // Window cũng đã đóng — tạo lại toàn bộ
+  const winId = await getIncognitoWindow();
+  return winId !== null;
+}
+
 function waitForTabLoad(tabId) {
   return new Promise(resolve => {
     const timeout = setTimeout(() => {
@@ -274,78 +343,233 @@ function setBadge(text, color) {
   if (color) chrome.action.setBadgeBackgroundColor({ color });
 }
 
+// ─── Alert sound ──────────────────────────────────────────────────────────────
+// Phát 3 tiếng "tinh tinh tinh" trong tab ẩn danh để báo user có CAPTCHA.
+// Không cần thêm permission — dùng lại scripting vào google.com đã được cấp.
+async function playAlertBeeps() {
+  if (!incognitoTabId) return;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: incognitoTabId },
+      func: () => {
+        try {
+          const Ctx = window.AudioContext || window.webkitAudioContext;
+          if (!Ctx) return;
+          const ctx = new Ctx();
+          const beep = (freq, t) => {
+            const osc  = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, t);
+            gain.gain.setValueAtTime(0, t);
+            gain.gain.linearRampToValueAtTime(0.55, t + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+            osc.start(t);
+            osc.stop(t + 0.35);
+          };
+          const now = ctx.currentTime;
+          beep(1046.5, now);        // C6
+          beep(1318.5, now + 0.42); // E6
+          beep(1568.0, now + 0.84); // G6
+        } catch (e) {}
+      },
+    });
+  } catch (e) {
+    console.log('[Sound] Không thể phát âm báo:', e.message);
+  }
+}
+
+// Âm hoàn thành — 2 nốt nhẹ nhàng đi lên (E5 → G5), nhỏ hơn CAPTCHA alert
+async function playDoneBeeps() {
+  if (!incognitoTabId) return;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: incognitoTabId },
+      func: () => {
+        try {
+          const Ctx = window.AudioContext || window.webkitAudioContext;
+          if (!Ctx) return;
+          const ctx = new Ctx();
+          const beep = (freq, t, vol = 0.3) => {
+            const osc  = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, t);
+            gain.gain.setValueAtTime(0, t);
+            gain.gain.linearRampToValueAtTime(vol, t + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+            osc.start(t);
+            osc.stop(t + 0.45);
+          };
+          const now = ctx.currentTime;
+          beep(659.3, now);        // E5
+          beep(783.9, now + 0.52); // G5
+        } catch (e) {}
+      },
+    });
+  } catch (e) {
+    console.log('[Sound] Không thể phát âm done:', e.message);
+  }
+}
+
 // ─── Kiểm tra 1 keyword qua nhiều trang ───────────────────────────────────────
 // Google bỏ qua &num=100 → paginate: start=0 (1-10), start=10 (11-20), ..., start=90 (91-100)
+//
+// Smart ordering : bắt đầu từ trang gần previousPosition thay vì trang 0.
+// Smart depth    : giới hạn số trang dựa vào previousPosition + bestPosition.
+//
+// Ví dụ previousPosition=45, bestPosition=8:
+//   depthFromPP = 7 (pos 31-60 → max 7 trang)
+//   depthFromBP = max(2, ceil(8/10)+1) = 2  →  dynamicMax = max(7,2) = 7
+//   pageOrder   = [3,4,5,6,7,8,9,2,1,0] → slice 7 → [3,4,5,6,7,8,9]
+//   Keyword tại pos 45 tìm được ở lần check thứ 2 (trang 4).
 async function checkKeywordAcrossPages(item, winId) {
-  const MAX_PAGES = 10; // 10 trang × 10 kết quả = top 100
+  const pp = item.previousPosition ?? null; // vị trí lần check gần nhất
+  const bp = item.bestPosition    ?? null; // vị trí tốt nhất lịch sử
 
-  const tabId = incognitoTabId;
-  if (!tabId) throw new Error('Không có incognito tab');
+  // ── Smart depth: tính số trang tối đa cần quét ──────────────────────────
+  // 1) Từ previousPosition (chỉ báo tốt nhất về vị trí hiện tại)
+  const depthFromPP = pp === null ? 10
+    : pp <= 10 ? 2
+    : pp <= 30 ? 4
+    : pp <= 60 ? 7
+    : 10;
 
-  // Điều hướng tab hiện có đến trang đầu tiên — KHÔNG tạo tab mới (gây window focus)
-  const firstUrl = `https://www.google.com/search?q=${encodeURIComponent(item.keyword)}&start=0&hl=vi&gl=vn`;
-  await chrome.tabs.update(tabId, { url: firstUrl, active: false });
+  // 2) Từ bestPosition — đảm bảo luôn cover trang chứa bestPos + 1 buffer
+  //    Tránh bỏ sót khi keyword hồi phục về vùng từng đạt được trước đây
+  const depthFromBP = bp !== null ? Math.min(10, Math.ceil(bp / 10) + 1) : 0;
+
+  const dynamicMax = Math.max(depthFromPP, depthFromBP);
+
+  // ── Smart ordering: bắt đầu gần hintPos, hoàn thiện phần còn lại sau ───
+  const hintPos = pp; // dùng previousPosition làm gợi ý vị trí
+  let pageOrder;
+  if (hintPos != null && hintPos > 10) {
+    const hintPageIdx = Math.max(0, Math.floor((hintPos - 1) / 10) - 1);
+    const forward  = Array.from({ length: 10 - hintPageIdx }, (_, i) => hintPageIdx + i);
+    const backward = Array.from({ length: hintPageIdx },      (_, i) => hintPageIdx - 1 - i);
+    pageOrder = [...forward, ...backward];
+  } else {
+    pageOrder = Array.from({ length: 10 }, (_, i) => i);
+  }
+
+  // Áp dụng giới hạn độ sâu
+  pageOrder = pageOrder.slice(0, dynamicMax);
+
+  console.log(`  📍 pp=${pp} bp=${bp} → dynamicMax=${dynamicMax} trang | thứ tự: [${pageOrder.map(p => p+1).join(',')}]`);
+
+  const ok = await ensureIncognitoTab();
+  if (!ok) throw new Error('Không thể tạo incognito tab');
+  let tabId = incognitoTabId;
+
+  // Tự detect ngôn ngữ keyword: tiếng Việt (có dấu) → hl=vi&gl=VN
+  // để kết quả khớp với Google người dùng Việt Nam thực sự thấy
+  const _kwLocale = /[àáảãạăặắằẳẵâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđÀÁẢÃẠĂẶẮẰẲẴÂẤẦẨẪẬÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ]/.test(item.keyword)
+    ? { hl: 'vi', gl: 'VN' }
+    : _browserLocale;
+  console.log(`  🌐 Locale: hl=${_kwLocale.hl} gl=${_kwLocale.gl}`);
+
+  const buildUrl = (kw, start) =>
+    `https://www.google.com/search?q=${encodeURIComponent(kw)}&start=${start}&hl=${_kwLocale.hl}&gl=${_kwLocale.gl}`;
+
+  await chrome.tabs.update(tabId, { url: buildUrl(item.keyword, pageOrder[0] * 10), active: false });
   chrome.windows.update(winId, { state: 'minimized', focused: false }).catch(() => {});
 
-  for (let page = 0; page < MAX_PAGES; page++) {
+  for (let i = 0; i < pageOrder.length; i++) {
+    const page = pageOrder[i];
     const startPos = page * 10; // offset tuyệt đối: 0, 10, 20, ...
 
-    if (page > 0) {
-      const nextUrl = `https://www.google.com/search?q=${encodeURIComponent(item.keyword)}&start=${startPos}&hl=vi&gl=vn`;
+    if (i > 0) {
+      // Kiểm tra tab còn sống trước khi navigate
+      const stillOk = await ensureIncognitoTab();
+      if (!stillOk) break;
+      tabId = incognitoTabId;
+      const nextUrl = buildUrl(item.keyword, startPos);
       await chrome.tabs.update(tabId, { url: nextUrl });
       chrome.windows.update(winId, { state: 'minimized', focused: false }).catch(() => {});
     }
 
     await waitForTabLoad(tabId);
     keepAlive();
-    await new Promise(r => setTimeout(r, 1200));
+    await new Promise(r => setTimeout(r, 800));
     keepAlive();
 
-    const scriptResult = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: extractRankingFromPage,
-      args: [item.domain],
-    });
-    const result = scriptResult[0]?.result || {};
+    let scriptResult;
+    try {
+      scriptResult = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: extractRankingFromPage,
+        args: [item.domain],
+      });
+    } catch(e) {
+      console.warn('  Tab đã đóng giữa chừng, bỏ qua trang này:', e.message);
+      break;
+    }
+    // result là let để có thể override sau silent-retry / sau giải CAPTCHA
+    let result = scriptResult?.[0]?.result || {};
 
-    // ── CAPTCHA ─────────────────────────────────────────────────────────
+    // ── CAPTCHA: silent retry 3s trước khi hiện cửa sổ ──────────────────
+    // Phần lớn "CAPTCHA" ở trang 2+ là false-positive (page chưa render xong).
+    // Thử lại im lặng một lần → chỉ hiện cửa sổ nếu vẫn còn CAPTCHA thật.
     if (result.captcha) {
-      console.warn(`  ⚠️ CAPTCHA trang ${page + 1}! Hiện cửa sổ để user giải...`);
-      setBadge('!', '#f59e0b');
-      // Hiện cửa sổ ẩn danh lên để user thấy và giải CAPTCHA
-      if (winId) chrome.windows.update(winId, { state: 'normal', focused: true }).catch(() => {});
+      console.log(`  🔄 Phát hiện CAPTCHA trang ${page + 1}, thử lại im lặng sau 3s...`);
+      await new Promise(r => setTimeout(r, 3000));
+      keepAlive();
+      try {
+        const silentRc = await chrome.scripting.executeScript({
+          target: { tabId }, func: extractRankingFromPage, args: [item.domain],
+        });
+        const sr = silentRc?.[0]?.result;
+        if (sr && !sr.captcha) {
+          console.log(`  ✅ False-positive CAPTCHA — trang ${page + 1} load xong bình thường.`);
+          result = sr; // override bằng kết quả đúng, xử lý tiếp bên dưới
+        }
+      } catch(e) { /* tab đang navigate, giữ result cũ */ }
+    }
 
-      let solved = false;
-      for (let attempt = 0; attempt < 12 && !solved; attempt++) {
+    // ── CAPTCHA thật (vẫn còn sau silent retry) ───────────────────────────
+    if (result.captcha) {
+      console.warn(`  ⚠️ CAPTCHA thật trang ${page + 1}! Hiện cửa sổ để user giải...`);
+      setBadge('!', '#f59e0b');
+      if (winId) chrome.windows.update(winId, { state: 'normal', focused: true }).catch(() => {});
+      playAlertBeeps(); // 🔔 tinh tinh tinh — báo user cần giải CAPTCHA
+
+      let captchaSolved = false;
+      for (let attempt = 0; attempt < 24 && !captchaSolved; attempt++) {
         await new Promise(r => setTimeout(r, 5000));
         keepAlive();
         try {
           const recheck = await chrome.scripting.executeScript({
-            target: { tabId },
-            func: extractRankingFromPage,
-            args: [item.domain],
+            target: { tabId }, func: extractRankingFromPage, args: [item.domain],
           });
           const r2 = recheck[0]?.result;
           if (r2 && !r2.captcha) {
             setBadge('⏳', '#3b82f6');
-            // Minimize lại sau khi giải xong, chờ thêm 3s để Google không block ngay
             if (winId) chrome.windows.update(winId, { state: 'minimized', focused: false }).catch(() => {});
             await new Promise(r => setTimeout(r, 3000));
             if (r2.found) {
               const absPos = startPos + r2.position;
               return { found: true, position: absPos, url: r2.url, strategy: r2.strategy, page: page + 1 };
             }
-            solved = true; // giải xong nhưng target không ở trang này → tiếp tục
+            result = r2;       // override để các bước sau dùng đúng data
+            captchaSolved = true;
           }
         } catch(e) { /* tab đang navigate */ }
       }
-      if (!solved) break; // hết thời gian → dừng
+      if (!captchaSolved) break; // hết thời gian → dừng job
     }
 
     // ── Tìm thấy! ────────────────────────────────────────────────────────
     if (result.found) {
       const absPos = startPos + result.position;
       console.log(`  ✅ Trang ${page + 1} | relative=#${result.position} | absolute=#${absPos} | ${result.url}`);
+      if (result.debug?.debugBefore?.length) {
+        console.log(`  📋 Results counted before target:`, result.debug.debugBefore);
+      }
       return {
         found: true,
         position: absPos,
@@ -357,8 +581,7 @@ async function checkKeywordAcrossPages(item, winId) {
       };
     }
 
-    // ── Hết kết quả? → dừng sớm ─────────────────────────────────────────
-    // Dùng max của tất cả strategy (không chỉ UWckNb/h3) tránh thoát sớm khi Google đổi cấu trúc
+    // ── Đếm kết quả trang hiện tại ───────────────────────────────────────
     const pageCount = Math.max(
       result.debug?.UWckNb || 0,
       result.debug?.yuRUbf || 0,
@@ -372,15 +595,22 @@ async function checkKeywordAcrossPages(item, winId) {
       console.log(`  Top hostnames trang này: ${result.foundHostnames.join(', ')}`);
     }
 
-    if (pageCount < 5) {
-      console.log('  → Ít hơn 5 kết quả → đã hết top 100, dừng');
-      break;
+    // Soft block: CHỈ hiện cửa sổ khi Google trang 1 (page index = 0) trả về 0 kết quả.
+    // Dùng `page === 0` (trang thật của Google) thay vì `i === 0` (index trong custom order)
+    // để tránh trigger khi smart ordering bắt đầu từ trang 3, 4...
+    if (page === 0 && pageCount === 0) {
+      console.warn('  ⚠️ Google trang 1 có 0 kết quả → có thể bị soft-block, hiện cửa sổ...');
+      setBadge('!', '#f59e0b');
+      if (winId) chrome.windows.update(winId, { state: 'normal', focused: true }).catch(() => {});
+      await new Promise(r => setTimeout(r, 10000));
+      if (winId) chrome.windows.update(winId, { state: 'minimized', focused: false }).catch(() => {});
+      setBadge('⏳', '#3b82f6');
     }
 
     // Delay giữa các trang — đủ dài để Google không coi là bot
-    if (page < MAX_PAGES - 1) {
+    if (i < pageOrder.length - 1) {
       keepAlive();
-      const waitMs = 2500 + Math.floor(Math.random() * 2000); // 2.5–4.5s
+      const waitMs = 800 + Math.floor(Math.random() * 600); // 0.8–1.4s
       await new Promise(r => setTimeout(r, waitMs));
     }
   }
@@ -390,22 +620,40 @@ async function checkKeywordAcrossPages(item, winId) {
 }
 
 // ─── Push trạng thái sang dashboard tab (real-time) ──────────────────────────
+// Cache tab IDs trong 30s để tránh gọi chrome.tabs.query({}) mỗi keyword
+let _dashTabCache = null, _dashTabCacheTime = 0;
+async function getDashboardTabs() {
+  const now = Date.now();
+  if (_dashTabCache && now - _dashTabCacheTime < 30000) return _dashTabCache;
+  const allTabs = await chrome.tabs.query({});
+  _dashTabCache = allTabs.filter(tab =>
+    tab.url && (
+      tab.url.startsWith('http://localhost:5173') ||
+      tab.url.startsWith('https://rank.moodbiz.vn') ||
+      tab.url.includes('moodbiz')
+    )
+  );
+  _dashTabCacheTime = now;
+  return _dashTabCache;
+}
+
 async function pushStatusToDashboard(keyword) {
   try {
-    // Tìm tab Dashboard ở cả localhost (dev) lẫn production
-    const allTabs = await chrome.tabs.query({});
-    const dashboardTabs = allTabs.filter(tab =>
-      tab.url && (
-        tab.url.startsWith('http://localhost:5173') ||
-        tab.url.startsWith('https://rank.moodbiz.vn') ||
-        tab.url.includes('moodbiz')
-      )
-    );
+    const dashboardTabs = await getDashboardTabs();
     for (const tab of dashboardTabs) {
       chrome.tabs.sendMessage(tab.id, {
         type: 'STATUS_UPDATE',
         currentKeyword: keyword,
-      }).catch(() => {}); // tab có thể không có content script → bỏ qua
+      }).catch(() => {});
+    }
+  } catch(e) {}
+}
+
+async function pushResultReady() {
+  try {
+    const dashboardTabs = await getDashboardTabs();
+    for (const tab of dashboardTabs) {
+      chrome.tabs.sendMessage(tab.id, { type: 'RESULT_READY' }).catch(() => {});
     }
   } catch(e) {}
 }
@@ -439,6 +687,8 @@ async function startProcessing(targetJobId = null) {
     }
   } else {
     console.log('✅ Incognito sẵn sàng (windowId:', incogWin, ')');
+    // Đảm bảo window đang minimized trước khi bắt đầu check
+    chrome.windows.update(incogWin, { state: 'minimized', focused: false }).catch(() => {});
   }
 
   let checked = 0, found = 0;
@@ -450,6 +700,7 @@ async function startProcessing(targetJobId = null) {
 
   while (true) {
     keepAlive();
+    if (shouldStop) { console.log('🛑 Stop signal nhận được, thoát loop.'); break; }
 
     // Lấy keyword tiếp theo từ queue
     let item;
@@ -495,62 +746,21 @@ async function startProcessing(targetJobId = null) {
 
     let result = { found: false, position: null };
     try {
-      // ── Ưu tiên dùng Google Custom Search API (không bị CAPTCHA) ──────────
-      const apiRes = await fetch(`${SERVER_URL}/api/rank-checker?action=check-keyword-api`, {
+      result = await checkKeywordAcrossPages(item, incognitoWindowId);
+      await fetch(`${SERVER_URL}/api/rank-checker?action=submit-result`, {
         method: 'POST',
         headers: apiHeaders(),
         body: JSON.stringify({
           jobId: item.jobId || currentJobId,
           keywordId: item.keywordId,
           keyword: item.keyword,
-          domain: item.domain,
+          position: result.found ? result.position : null,
+          url: result.url || null,
         }),
-      });
-      const apiData = await apiRes.json();
-
-      if (apiRes.ok && apiData.ok && apiData.position !== null) {
-        // CSE tìm thấy vị trí (top 30), kết quả đã được lưu bởi server
-        result = { found: true, position: apiData.position, url: apiData.url, source: 'cse' };
-        console.log(`  [CSE] ✅ Tìm thấy #${apiData.position} | scanned ${apiData.totalScanned} results`);
-      } else {
-        // CSE không thấy trong top 30 → thử GSC (không cần browser, không bị CAPTCHA)
-        console.log(`  [CSE] Không có trong top ${apiData?.totalScanned || 30} → hỏi GSC...`);
-        try {
-          const gscRes = await fetch(`${SERVER_URL}/api/rank-checker?action=check-keyword-gsc`, {
-            method: 'POST',
-            headers: apiHeaders(),
-            body: JSON.stringify({
-              jobId: item.jobId || currentJobId,
-              keywordId: item.keywordId,
-              keyword: item.keyword,
-              domain: item.domain,
-            }),
-          });
-          const gscData = await gscRes.json();
-          if (gscRes.ok && gscData.ok && gscData.position !== null) {
-            result = { found: true, position: gscData.position, url: null, source: 'gsc' };
-            console.log(`  [GSC] ✅ Tìm thấy #${gscData.position} (trung bình ${gscData.days} ngày)`);
-          } else {
-            result = { found: false, position: null, source: 'gsc' };
-            console.log(`  [GSC] Không có dữ liệu → not found`);
-          }
-        } catch(gscErr) {
-          result = { found: false, position: null, source: 'gsc-error' };
-          console.warn('  [GSC] Lỗi:', gscErr.message);
-        }
-        // Submit kết quả (found hay not found) để cập nhật tiến độ job
-        await fetch(`${SERVER_URL}/api/rank-checker?action=submit-result`, {
-          method: 'POST',
-          headers: apiHeaders(),
-          body: JSON.stringify({
-            jobId: item.jobId || currentJobId,
-            keywordId: item.keywordId,
-            keyword: item.keyword,
-            position: result.found ? result.position : null,
-            url: result.url || null,
-          }),
-        }).catch(e => console.error('  Submit error:', e.message));
-      }
+      }).catch(e => console.error('  Submit error:', e.message));
+      // Báo dashboard fetch kết quả ngay, chờ UI cập nhật trước khi check tiếp
+      await pushResultReady();
+      await new Promise(r => setTimeout(r, 1000));
     } catch(err) {
       result.error = err.message;
       console.error('  Error:', err.message);
@@ -568,20 +778,28 @@ async function startProcessing(targetJobId = null) {
     progressState.recentResults.unshift({ keyword: item.keyword, position: result.found ? result.position : null });
     if (progressState.recentResults.length > 20) progressState.recentResults.pop();
 
-    // Delay giữa các keyword — 8–15s giả lập người dùng
-    if (item.remaining > 0) {
-      const waitMs = 8000 + Math.floor(Math.random() * 7000);
+    // Delay giữa các keyword — 2–4s giả lập người dùng
+    if (item.remaining > 0 && !shouldStop) {
+      const waitMs = 2000 + Math.floor(Math.random() * 2000);
       console.log(`  ⏳ Chờ ${(waitMs/1000).toFixed(1)}s trước keyword tiếp theo...`);
       keepAlive();
       await new Promise(r => setTimeout(r, waitMs));
     }
   }
 
+  const wasStopped = shouldStop;
+  shouldStop = false;
+  if (!wasStopped) await playDoneBeeps(); // phát trước khi đóng window
   await closeIncognitoWindow();
   isProcessing = false;
-  console.log(`\n✅ Hoàn thành! Checked ${checked}, found ${found}`);
-  setBadge('✓', '#22c55e');
-  setTimeout(() => setBadge('', ''), 5000);
+  if (wasStopped) {
+    console.log(`\n🛑 Dừng sớm! Checked ${checked}, found ${found}`);
+    setBadge('', '');
+  } else {
+    console.log(`\n✅ Hoàn thành! Checked ${checked}, found ${found}`);
+    setBadge('✓', '#22c55e');
+    setTimeout(() => setBadge('', ''), 5000);
+  }
   return { ok: true, checked, found };
 }
 
@@ -598,6 +816,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     startProcessing(targetJobId)
       .then(result => sendResponse(result))
       .catch(err => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+  if (message.type === 'STOP_CHECKING') {
+    console.log('🛑 STOP_CHECKING received from popup');
+    shouldStop = true;
+    sendResponse({ ok: true });
     return true;
   }
   if (message.type === 'GET_STATUS') {
@@ -625,10 +849,15 @@ async function updateBadge() {
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.alarms.create('checkQueue', { periodInMinutes: 0.5 });
+  chrome.alarms.create('checkQueue',   { periodInMinutes: 0.5 });
+  chrome.alarms.create('sw_keepalive', { periodInMinutes: 0.5 });
   updateBadge();
 });
-chrome.runtime.onStartup.addListener(updateBadge);
+chrome.runtime.onStartup.addListener(() => {
+  chrome.alarms.create('sw_keepalive', { periodInMinutes: 0.5 });
+  updateBadge();
+});
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'checkQueue' && !isProcessing) updateBadge();
+  if (alarm.name === 'checkQueue'   && !isProcessing) updateBadge();
+  if (alarm.name === 'sw_keepalive') keepAlive();
 });

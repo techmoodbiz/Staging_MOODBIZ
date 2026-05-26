@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"const d=require\\('./locales/vi.json'\\); console.log\\(Object.keys\\(d\\)\\)\")",
+      "Bash(npx tsc *)",
+      "WebFetch(domain:chromewebstore.google.com)",
+      "Bash(git checkout *)"
+    ]
+  }
+}

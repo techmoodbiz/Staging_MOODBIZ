@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
-  RefreshCw, Sparkles, Copy, PenTool, Package,
-  ChevronDown, Globe, Layout, Building2, Zap, BookOpen,
-  Languages, Mail, Facebook, Linkedin, LayoutDashboard, ShoppingBag,
-  UserCircle, Users, Award, ChevronUp, ShieldCheck, Target
+  RefreshCw, Sparkles, Copy, PenTool,
+  Globe, Layout, Zap, BookOpen,
+  Mail, Facebook, Linkedin, ShoppingBag,
+  UserCircle, Users, Award, ShieldCheck, Target
 } from 'lucide-react';
 // @ts-ignore
 import ReactMarkdown from 'react-markdown';
@@ -250,9 +250,9 @@ const GeneratorTab: React.FC<GeneratorTabProps> = ({
             <div className="absolute top-0 right-0 w-64 h-64 bg-cyan/5 rounded-full blur-[100px] -mr-32 -mt-32 group-hover:bg-cyan/10 transition-all duration-1000" />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-8 relative z-30">
-            {/* Column 1: Market Entities (Brands, Products, Personas) */}
-            <div className="lg:col-span-5 space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 relative z-30">
+            {/* Column 1: Brand, Products, Persona */}
+            <div className="space-y-6">
               <div>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">{t('generator.brand')}</p>
                 <BrandSelector availableBrands={availableBrands} selectedBrandId={selectedBrandId} onChange={setSelectedBrandId} className="!rounded-2xl shadow-soft" />
@@ -282,8 +282,8 @@ const GeneratorTab: React.FC<GeneratorTabProps> = ({
               </div>
             </div>
 
-            {/* Column 2: Output Configuration (Language, Platform) */}
-            <div className="lg:col-span-3 space-y-6">
+            {/* Column 2: Language, Platform */}
+            <div className="space-y-6">
               <div className="space-y-3">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">{t('generator.language')}</p>
                 <CustomSelect options={languageOptions} value={genLanguage} onChange={setGenLanguage} icon={Globe} className="!rounded-2xl shadow-soft" />
@@ -294,64 +294,27 @@ const GeneratorTab: React.FC<GeneratorTabProps> = ({
               </div>
             </div>
 
-            {/* Column 3: Management Overview (Stats) */}
-            <div className="lg:col-span-4 h-full">
-              <div className="bg-slate-50/80 backdrop-blur-xl rounded-3xl p-6 text-navy h-full relative overflow-hidden group/stats transition-all duration-1000 border border-slate-200/60 shadow-inner-soft">
-                <div className="absolute top-0 right-0 w-48 h-48 bg-cyan/5 rounded-full blur-[60px] -mr-24 -mt-24 group-hover/stats:bg-cyan/10 transition-all duration-1000" />
-
-                <div className="flex items-center gap-3 mb-6 relative z-10">
-                  <div className="p-2 rounded-xl bg-navy/5 border border-navy/10 text-cyan">
-                    <Building2 size={18} className="drop-shadow-glow" />
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-black text-navy/40 uppercase tracking-[0.2em] block leading-none mb-1">{t('common.security_access')}</span>
-                    <span className="text-[11px] font-black text-cyan uppercase tracking-[0.2em] block">{t('admin.brands.intelligence_profile')}</span>
-                  </div>
-                </div>
-
-                  <div className="grid grid-cols-1 gap-4 relative z-10">
-                    {[
-                      { label: t('admin.brands.brands_count'), count: availableBrands.length, icon: Building2, color: 'text-cyan' },
-                      { label: t('admin.brands.products_count'), count: products.length, icon: ShoppingBag, color: 'text-emerald-500' },
-                      { label: t('admin.brands.personas_count'), count: personas.length, icon: UserCircle, color: 'text-purple-500' },
-                    ].map((stat, i) => (
-                      <div key={i} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-2xl hover:bg-white/80 hover:border-cyan/20 transition-all shadow-soft group/item">
-                        <div className="flex items-center gap-3">
-                          <stat.icon size={16} className={stat.color} />
-                          <span className="text-[11px] font-black uppercase tracking-widest text-navy/60 group-hover/item:text-navy/80">{stat.label}</span>
-                        </div>
-                        <span className="text-xl font-black italic tabular-nums text-navy">{stat.count}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                <div className="mt-6 flex items-center justify-center gap-2 relative z-10">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-[9px] font-black text-navy/30 uppercase tracking-[0.3em]">{t('generator.health_guard.synced')}</span>
-                </div>
+            {/* Column 3: Topic + Generate button */}
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3 flex-1">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">{t('generator.input_topic')}</p>
+                <textarea
+                  className="flex-1 w-full bg-slate-50/50 border border-slate-200 rounded-3xl p-5 min-h-[160px] text-[15px] font-bold text-navy placeholder:text-slate-300 focus:bg-white focus:ring-12 focus:ring-cyan/5 focus:border-cyan/30 transition-all custom-scrollbar outline-none shadow-inner-soft italic leading-relaxed resize-none"
+                  placeholder={t('generator.placeholder_topic')}
+                  value={genTopic}
+                  onChange={e => setGenTopic(e.target.value)}
+                />
               </div>
+              <button
+                onClick={handleGenerate}
+                disabled={isGenerating || !genTopic}
+                className="w-full py-5 bg-navy text-white rounded-3xl font-black text-[13px] flex justify-center items-center gap-3 shadow-2xl hover:shadow-cyan/10 transition-all duration-1000 active:scale-[0.98] disabled:opacity-30 uppercase tracking-[0.3em] relative overflow-hidden group border border-white/10"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-cyan/20 via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                {isGenerating ? <RefreshCw className="animate-spin text-cyan" size={22} /> : <Zap size={22} className="text-cyan drop-shadow-glow" />}
+                <span className="relative z-10">{isGenerating ? t('generator.generating') : t('generator.start_generate')}</span>
+              </button>
             </div>
-          </div>
-
-          <div className="grid lg:grid-cols-4 gap-6 items-end relative z-10 border-t border-slate-100 pt-5">
-            <div className="lg:col-span-3 space-y-3">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">{t('generator.input_topic')}</p>
-              <textarea
-                className="w-full bg-slate-50/50 border border-slate-200 rounded-3xl p-5 min-h-[100px] text-[15px] font-bold text-navy placeholder:text-slate-300 focus:bg-white focus:ring-12 focus:ring-cyan/5 focus:border-cyan/30 transition-all custom-scrollbar outline-none shadow-inner-soft italic leading-relaxed"
-                placeholder={t('generator.placeholder_topic')}
-                value={genTopic}
-                onChange={e => setGenTopic(e.target.value)}
-              />
-            </div>
-            <button
-              onClick={handleGenerate}
-              disabled={isGenerating || !genTopic}
-              className="lg:col-span-1 h-[100px] bg-navy text-white rounded-3xl font-black text-[13px] flex flex-col justify-center items-center gap-2 shadow-2xl hover:shadow-cyan/10 transition-all duration-1000 active:scale-[0.98] disabled:opacity-30 uppercase tracking-[0.3em] relative overflow-hidden group border border-white/10 mb-0"
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-cyan/20 via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-              {isGenerating ? <RefreshCw className="animate-spin text-cyan" size={24} /> : <Zap size={24} className="text-cyan drop-shadow-glow" />}
-              <span className="relative z-10">{isGenerating ? t('generator.generating') : t('generator.start_generate')}</span>
-            </button>
           </div>
         </div>
 

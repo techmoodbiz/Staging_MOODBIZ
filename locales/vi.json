@@ -38,6 +38,8 @@
         "ai_research_desc": "Phân tích nội dung từ URLs để trích xuất Insight đối thủ & thị trường",
         "seo_inspector": "Phân Tích SEO URL",
         "seo_inspector_desc": "Scan & kiểm tra nhanh các chỉ số Technical On-Page SEO",
+        "rank_checker": "Kiểm Tra Thứ Hạng",
+        "rank_checker_desc": "Theo dõi vị trí từ khóa trên Google SERP theo thời gian thực",
         "brand_activities": "Hoạt động thương hiệu",
         "brand_values": "Giá trị thương hiệu",
         "brand_values_subtitle": "Giá trị cốt lõi của các thương hiệu đang quản lý",
@@ -48,7 +50,9 @@
         "brands": "Thương hiệu",
         "generations": "Lượt tạo",
         "audits": "Lượt Audit",
-        "users": "Người dùng"
+        "users": "Người dùng",
+        "more_values": "+{{count}} thêm",
+        "audit_content": "Kiểm tra nội dung"
     },
     "nav": {
         "dashboard": "Dashboard",
@@ -56,6 +60,7 @@
         "research": "AI Research",
         "auditor": "Voice Auditor",
         "seo_inspector": "SEO URL Inspector",
+        "rank_checker": "Google Rank Checker",
         "generations": "Lịch sử Generator",
         "audits": "Lịch sử Auditor",
         "analytics": "Phân tích Auditor",
@@ -663,7 +668,10 @@
                 "update_btn": "Cập Nhật",
                 "create_btn": "Tạo Tài Khoản",
                 "fill_error": "Vui lòng nhập đầy đủ tên và email",
-                "password_error": "Vui lòng nhập mật khẩu cho tài khoản mới"
+                "password_error": "Vui lòng nhập mật khẩu cho tài khoản mới",
+                "feature_permissions": "Phân quyền tính năng",
+                "select_all": "Chọn tất cả",
+                "deselect_all": "Bỏ chọn tất cả"
             }
         },
         "settings": {
@@ -719,5 +727,48 @@
         "vietnamese": "Tiếng Việt",
         "english": "Tiếng Anh",
         "japanese": "Tiếng Nhật"
+    },
+    "rank_checker": {
+        "subtitle": "Theo dõi thứ hạng từ khóa thời gian thực qua trình duyệt.",
+        "delete_brand": "Xóa thương hiệu",
+        "extension_ready": "Ready",
+        "extension_not_detected": "Not Detected",
+        "bulk_add_toggle": "Thêm nhiều",
+        "requires_extension": "Yêu cầu Extension ẩn danh",
+        "keyword_placeholder": "Nhập từ khóa...",
+        "bulk_placeholder": "Mỗi dòng một từ khóa...",
+        "bulk_confirm": "Xác nhận",
+        "delete_keyword": "Xóa từ khóa",
+        "table_title": "Bảng xếp hạng",
+        "domain_not_set": "Chưa cấu hình",
+        "checking": "Đang kiểm tra...",
+        "start_check": "Bắt đầu check",
+        "export_excel": "Xuất ra Excel",
+        "copy_all": "Copy All",
+        "loading": "Đang tải dữ liệu...",
+        "no_data": "Chưa có dữ liệu",
+        "no_data_desc": "Thêm từ khóa và nhấn \"Bắt đầu check\" để xem kết quả xếp hạng.",
+        "col_stt": "STT",
+        "col_keyword": "Từ khóa",
+        "col_position": "Vị trí",
+        "col_prev_position": "Vị trí cũ",
+        "col_change": "Thay đổi",
+        "col_best": "Tốt nhất",
+        "col_updated": "Cập nhật",
+        "col_link": "Liên kết",
+        "not_checked": "Chưa check",
+        "view_history": "Xem lịch sử",
+        "toast_check_complete": "Kiểm tra thứ hạng hoàn tất",
+        "toast_keyword_added": "Đã thêm từ khóa",
+        "toast_keyword_duplicate": "\"{{keyword}}\" đã tồn tại",
+        "toast_keywords_added": "Đã thêm {{count}} từ khóa",
+        "toast_keywords_added_with_skipped": "Đã thêm {{count}} từ khóa (bỏ qua {{skipped}} trùng lặp)",
+        "copy_all_content": "Copy tất cả",
+        "toast_keywords_copied": "Đã copy {{count}} từ khóa",
+        "toast_content_copied": "Đã copy {{count}} kết quả",
+        "toast_keywords_deleted": "Đã xóa {{count}} từ khóa",
+        "confirm_delete_keyword": "Bạn có chắc chắn muốn xóa từ khóa này?",
+        "confirm_delete_keywords": "Xóa {{count}} từ khóa đã chọn?",
+        "error_init_job": "Lỗi khi khởi tạo job"
     }
 }

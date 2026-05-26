@@ -583,8 +583,17 @@ const App = () => {
               : <RestrictedAccess />
           } />
           <Route path="rank-checker" element={
-            hasAccess(['admin', 'brand_owner', 'content_creator']) ?
-              <RankCheckerTab currentUser={currentUser} availableBrands={availableBrands} />
+            hasAccess(['admin', 'brand_owner']) ?
+              <RankCheckerTab
+                currentUser={currentUser}
+                availableBrands={availableBrands}
+                selectedBrandId={selectedBrandId}
+                setSelectedBrandId={setSelectedBrandId}
+                setToast={setToast}
+                setEditingBrand={setEditingBrand}
+                setIsBrandModalOpen={setIsBrandModalOpen}
+                handleDeleteBrand={handleDeleteBrand}
+              />
               : <RestrictedAccess />
           } />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Extraction Simulator — Rank Checker Debug</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .pass  { background:#dcfce7; border-left:4px solid #16a34a; }
+    .fail  { background:#fee2e2; border-left:4px solid #dc2626; }
+    .warn  { background:#fef9c3; border-left:4px solid #ca8a04; }
+    .tab-active   { border-bottom:2px solid #7c3aed; color:#7c3aed; font-weight:600; }
+    .tab-inactive { border-bottom:2px solid transparent; color:#6b7280; }
+    details summary { cursor:pointer; user-select:none; }
+    #sandboxFrame { display:none; }
+    pre { white-space:pre-wrap; word-break:break-all; font-size:11px; }
+    .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:600; }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-4">
+<div class="max-w-5xl mx-auto space-y-4">
+
+<!-- Header -->
+<div class="bg-white rounded-2xl shadow p-5">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold">🧪 Extraction Simulator</h1>
+      <p class="text-sm text-gray-500 mt-0.5">Debug logic trích xuất thứ hạng — không cần mở Google thật</p>
+    </div>
+    <a href="http://localhost:5000" class="text-sm text-purple-600 hover:underline">← Dashboard</a>
+  </div>
+
+  <!-- Tabs -->
+  <div class="flex gap-6 mt-4 border-b">
+    <button onclick="switchTab('sim')"   id="tab-sim"  class="tab-active   pb-3 text-sm transition">📐 Tab 1: Giả lập HTML</button>
+    <button onclick="switchTab('real')"  id="tab-real" class="tab-inactive pb-3 text-sm transition">📋 Tab 2: Paste HTML thật</button>
+    <button onclick="switchTab('live')"  id="tab-live" class="tab-inactive pb-3 text-sm transition">🔴 Tab 3: So sánh live</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     TAB 1 — Giả lập HTML
+═══════════════════════════════════════════════════════════════ -->
+<div id="pane-sim" class="space-y-4">
+
+  <!-- Test cases -->
+  <div class="bg-white rounded-2xl shadow p-5">
+    <h2 class="font-bold mb-3">Test cases <span class="text-gray-400 font-normal text-sm">(keyword + domain + vị trí mong đợi)</span></h2>
+    <div id="simCases" class="space-y-2 mb-3"></div>
+    <div class="flex gap-2">
+      <button onclick="addSimCase()" class="text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg">+ Thêm case</button>
+      <button onclick="runSim()"
+        class="text-sm px-5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition">
+        ▶ Chạy test
+      </button>
+    </div>
+  </div>
+
+  <!-- Tuỳ chọn -->
+  <div class="bg-white rounded-2xl shadow p-5">
+    <h2 class="font-bold mb-3">Tùy chọn DOM giả lập</h2>
+    <div class="grid grid-cols-2 gap-3 text-sm mb-3">
+      <label class="flex items-center gap-2"><input type="checkbox" id="opt-ads"       checked> 2 quảng cáo (#tads)</label>
+      <label class="flex items-center gap-2"><input type="checkbox" id="opt-sitelinks" checked> Sitelinks cho kết quả #1 (4 links)</label>
+      <label class="flex items-center gap-2"><input type="checkbox" id="opt-paa"       checked> People Also Ask (sau #3)</label>
+      <label class="flex items-center gap-2"><input type="checkbox" id="opt-featured">          Featured Snippet (#0)</label>
+    </div>
+    <div class="flex items-center gap-3 text-sm flex-wrap gap-y-2">
+      <span class="text-gray-600">Số trang cần check:</span>
+      <input type="number" id="opt-pages" value="10" min="1" max="10"
+        class="w-16 px-2 py-1 border rounded-lg text-center text-sm">
+      <span class="text-gray-400 text-xs">(mỗi trang 10 kết quả → 10 trang = top 100)</span>
+    </div>
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-2.5 text-xs text-blue-700 mt-1">
+      ℹ️ Google mới chỉ cho 10 kết quả/trang. Extension dùng <code>start=0, start=10, start=20...</code> để paginate qua top 100.
+    </div>
+  </div>
+
+  <!-- Kết quả -->
+  <div id="sim-results" class="space-y-3"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     TAB 2 — Paste HTML thật
+═══════════════════════════════════════════════════════════════ -->
+<div id="pane-real" class="space-y-4 hidden">
+
+  <div class="bg-white rounded-2xl shadow p-5">
+    <h2 class="font-bold mb-1">Paste HTML từ trang Google thật</h2>
+    <div class="bg-amber-50 border border-amber-300 rounded-xl p-3 mb-4 text-sm">
+      <p class="font-semibold text-amber-800 mb-2">⚠️ Google mới: <code>&amp;num=100</code> không còn hoạt động — mỗi trang chỉ có <strong>10 kết quả</strong></p>
+      <p class="text-xs text-amber-700 font-medium mb-1">Cách lấy HTML đúng (dán URL vào Chrome incognito):</p>
+      <div class="space-y-1.5 text-xs">
+        <div class="flex gap-2 items-center">
+          <span class="bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded font-mono shrink-0">Trang 1</span>
+          <code class="bg-white border px-2 py-0.5 rounded select-all">https://www.google.com/search?q=<em>keyword</em>&start=0</code>
+          <span class="text-amber-600">→ pos 1–10</span>
+        </div>
+        <div class="flex gap-2 items-center">
+          <span class="bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded font-mono shrink-0">Trang 2</span>
+          <code class="bg-white border px-2 py-0.5 rounded select-all">https://www.google.com/search?q=<em>keyword</em>&start=10</code>
+          <span class="text-amber-600">→ pos 11–20</span>
+        </div>
+        <div class="flex gap-2 items-center">
+          <span class="bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded font-mono shrink-0">Trang 3</span>
+          <code class="bg-white border px-2 py-0.5 rounded select-all">https://www.google.com/search?q=<em>keyword</em>&start=20</code>
+          <span class="text-amber-600">→ pos 21–30</span>
+        </div>
+      </div>
+      <p class="text-xs text-amber-600 mt-2">Sau khi vào URL → <kbd class="bg-white border px-1 rounded">Ctrl+U</kbd> → <kbd class="bg-white border px-1 rounded">Ctrl+A</kbd> → <kbd class="bg-white border px-1 rounded">Ctrl+C</kbd> → paste vào ô dưới</p>
+    </div>
+
+    <!-- Chọn trang đang paste -->
+    <div class="flex items-center gap-3 mb-3 text-sm">
+      <label class="text-gray-600 font-medium shrink-0">Trang (start=?):</label>
+      <select id="real-page" class="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 outline-none">
+        <option value="0">Trang 1 (start=0, pos 1–10)</option>
+        <option value="10">Trang 2 (start=10, pos 11–20)</option>
+        <option value="20">Trang 3 (start=20, pos 21–30)</option>
+        <option value="30">Trang 4 (start=30, pos 31–40)</option>
+        <option value="40">Trang 5 (start=40, pos 41–50)</option>
+        <option value="50">Trang 6 (start=50, pos 51–60)</option>
+        <option value="60">Trang 7 (start=60, pos 61–70)</option>
+        <option value="70">Trang 8 (start=70, pos 71–80)</option>
+        <option value="80">Trang 9 (start=80, pos 81–90)</option>
+        <option value="90">Trang 10 (start=90, pos 91–100)</option>
+      </select>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3 mb-3">
+      <div>
+        <label class="text-xs text-gray-500 font-medium block mb-1">Domain tìm kiếm</label>
+        <input id="real-domain" value="nhatrangtour.vip" placeholder="nhatrangtour.vip"
+          class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 outline-none">
+      </div>
+      <div>
+        <label class="text-xs text-gray-500 font-medium block mb-1">Vị trí thực tế (nếu biết)</label>
+        <input id="real-expected" type="number" placeholder="Để trống nếu không biết" min="1"
+          class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 outline-none">
+      </div>
+    </div>
+
+    <textarea id="real-html" rows="8"
+      placeholder="Paste toàn bộ source HTML của trang Google ở đây (Ctrl+U → Ctrl+A → Ctrl+C)..."
+      class="w-full px-3 py-2 border rounded-lg text-sm font-mono focus:ring-2 focus:ring-purple-300 outline-none resize-y"></textarea>
+
+    <div class="flex gap-2 mt-3">
+      <button onclick="runRealTest()"
+        class="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg transition">
+        🔍 Phân tích HTML
+      </button>
+      <button onclick="document.getElementById('real-html').value=''"
+        class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-sm rounded-lg transition">
+        Xóa
+      </button>
+    </div>
+  </div>
+
+  <div id="real-results" class="space-y-3"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     TAB 3 — So sánh live với server
+═══════════════════════════════════════════════════════════════ -->
+<div id="pane-live" class="space-y-4 hidden">
+
+  <div class="bg-white rounded-2xl shadow p-5">
+    <h2 class="font-bold mb-3">Kết quả check gần nhất từ server</h2>
+    <div class="flex gap-2 mb-4">
+      <select id="live-site" class="flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-300 outline-none">
+        <option>Đang tải...</option>
+      </select>
+      <button onclick="loadLiveData()"
+        class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg transition">
+        🔄 Tải rankings
+      </button>
+    </div>
+    <div id="live-results">
+      <p class="text-gray-400 text-sm text-center py-6">Chọn website và nhấn "Tải rankings"</p>
+    </div>
+  </div>
+
+</div>
+
+<!-- Hidden sandbox container -->
+<div id="sandboxFrame" aria-hidden="true"></div>
+
+</div><!-- end max-w -->
+
+<script>
+const API = 'http://localhost:5000/api';
+
+// ─── Tab switching ─────────────────────────────────────────────────────────
+function switchTab(name) {
+  ['sim','real','live'].forEach(t => {
+    document.getElementById('pane-' + t).classList.toggle('hidden', t !== name);
+    const btn = document.getElementById('tab-' + t);
+    btn.className = (t === name ? 'tab-active' : 'tab-inactive') + ' pb-3 text-sm transition';
+  });
+  if (name === 'live') initLiveSites();
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmtDate(d) {
+  return d ? new Date(d).toLocaleString('vi-VN') : '—';
+}
+function badge(pos) {
+  if (pos == null) return '<span class="pill bg-gray-100 text-gray-400">—</span>';
+  const cls = pos <= 3 ? 'bg-yellow-100 text-yellow-800' : pos <= 10 ? 'bg-green-100 text-green-700' : pos <= 30 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600';
+  return `<span class="pill ${cls}">#${pos}</span>`;
+}
+
+// ─── EXTRACTION LOGIC (bản copy từ background.js) ────────────────────────
+function runExtraction(targetDomain, container) {
+  const norm = d => String(d).toLowerCase()
+    .replace(/^https?:\/\//, '').replace(/^www\./, '')
+    .replace(/\/.*$/, '').replace(/:.*$/, '').trim();
+
+  const isInsideAd = el => {
+    let p = el;
+    while (p && p !== document.body && p !== container) {
+      const id = p.id || '';
+      if (id === 'tads' || id === 'bottomads' || id === 'tadsb') return true;
+      if (p.getAttribute?.('data-text-ad')) return true;
+      const cls = p.className || '';
+      if (typeof cls === 'string' && (cls.includes('commercial-unit') || cls.includes('ads-fr'))) return true;
+      p = p.parentElement;
+    }
+    return false;
+  };
+
+  const BAD = ['google.','youtube.com','gstatic.','googleapis.',
+               'googleusercontent.','gmail.com','blogger.com','translate.google','maps.google'];
+  const excluded = h => { const n = norm(h); return BAD.some(b => n === b || n.startsWith(b) || n.endsWith('.'+b.replace(/\.$/,''))); };
+
+  // toLinks: lưu thêm el để đếm div.g slot
+  const toLinks = nodes => Array.from(nodes)
+    .filter(a => a?.href?.startsWith('http') && !isInsideAd(a))
+    .reduce((acc, a) => {
+      try { const u = new URL(a.href); if (!excluded(u.hostname)) acc.push({ url: a.href, hostname: u.hostname, el: a }); } catch(e) {}
+      return acc;
+    }, []);
+
+  const target = norm(targetDomain);
+  const rso = container.querySelector('#rso') || container.querySelector('#search') || container;
+
+  const s = {};
+  s.UWckNb = toLinks(rso.querySelectorAll('a[jsname="UWckNb"]'));
+  s.yuRUbf = toLinks(rso.querySelectorAll('.yuRUbf a[href^="http"]'));
+  s.h3     = toLinks(Array.from(rso.querySelectorAll('h3')).map(h => h.closest('a')).filter(Boolean));
+  const topGsDom = Array.from(rso.querySelectorAll('div.g')).filter(g => !g.parentElement?.closest('div.g'));
+  s.divG   = toLinks(topGsDom.map(g => g.querySelector('a[href^="http"]')).filter(Boolean));
+  s.ping   = toLinks(rso.querySelectorAll('a[ping][href^="http"]'));
+
+  // Position per strategy (dùng index mảng — để hiển thị so sánh trong bảng)
+  const allPos = {};
+  for (const [key, arr] of Object.entries(s)) {
+    for (let i = 0; i < arr.length; i++) {
+      const h = norm(arr[i].hostname);
+      if (h === target || h.endsWith('.'+target) || target.endsWith('.'+h)) { allPos[key] = i+1; break; }
+    }
+    if (allPos[key] === undefined) allPos[key] = null;
+  }
+
+  // Bước 1: Tìm target bằng priority
+  let targetLink = null, bestKey = 'none';
+  for (const key of ['UWckNb','yuRUbf','h3','divG','ping']) {
+    for (const lnk of s[key]) {
+      const h = norm(lnk.hostname);
+      if (h === target || h.endsWith('.'+target) || target.endsWith('.'+h)) {
+        targetLink = lnk; bestKey = key; break;
+      }
+    }
+    if (targetLink) break;
+  }
+
+  let found = false, position = null, url = null;
+
+  if (targetLink) {
+    found = true;
+    url   = targetLink.url;
+
+    // Bước 2: Đếm vị trí đúng bằng div.g slot counting
+    try {
+      let targetG = targetLink.el.closest('div.g');
+      if (targetG) {
+        while (targetG.parentElement?.closest('div.g')) {
+          targetG = targetG.parentElement.closest('div.g');
+        }
+        const allTopGs = Array.from(rso.querySelectorAll('div.g'))
+          .filter(g => !g.parentElement?.closest('div.g') && !isInsideAd(g));
+        const idx = allTopGs.indexOf(targetG);
+        if (idx >= 0) position = idx + 1;
+      }
+    } catch(e) {}
+
+    // Fallback nếu div.g counting thất bại
+    if (!position) {
+      const arr = s[bestKey];
+      for (let i = 0; i < arr.length; i++) {
+        const h = norm(arr[i].hostname);
+        if (h === target || h.endsWith('.'+target) || target.endsWith('.'+h)) { position = i+1; break; }
+      }
+    }
+  }
+
+  const allTopGsCount = Array.from(rso.querySelectorAll('div.g'))
+    .filter(g => !g.parentElement?.closest('div.g') && !isInsideAd(g)).length;
+
+  // Diagnosis
+  const diagnosis = {
+    hasRso:      !!container.querySelector('#rso'),
+    hasSearch:   !!container.querySelector('#search'),
+    hasTads:     !!container.querySelector('#tads'),
+    countUWckNb: rso.querySelectorAll('a[jsname="UWckNb"]').length,
+    countPing:   rso.querySelectorAll('a[ping]').length,
+    countH3:     rso.querySelectorAll('h3').length,
+    countDivG:   allTopGsCount,
+    countYuRUbf: rso.querySelectorAll('.yuRUbf').length,
+  };
+
+  const best = s[bestKey] || [];
+  return { found, position, url, strategy: bestKey, debug: Object.fromEntries(Object.entries(s).map(([k,v])=>[k,v.length])), allPos, diagnosis, bestLinks: best.slice(0, 30) };
+}
+
+// ─── Render result card ───────────────────────────────────────────────────
+function renderResultCard(result, domain, expectedPos, title) {
+  const expected = parseInt(expectedPos) || null;
+  let statusCls, statusIcon, statusText;
+
+  if (expected !== null) {
+    const ok = result.found && result.position === expected;
+    const wrong = result.found && result.position !== expected;
+    statusCls  = ok ? 'pass' : wrong ? 'warn' : 'fail';
+    statusIcon = ok ? '✅' : wrong ? '⚠️' : '❌';
+    statusText = ok
+      ? `Đúng! Tìm được #${result.position}`
+      : wrong
+      ? `Sai vị trí: tìm #${result.position}, mong đợi #${expected}`
+      : `Không tìm thấy (mong đợi #${expected})`;
+  } else {
+    statusCls  = result.found ? 'pass' : 'fail';
+    statusIcon = result.found ? '✅' : '❌';
+    statusText = result.found ? `Tìm được #${result.position}` : `Không tìm thấy trong ${result.debug[result.strategy] || 0} kết quả`;
+  }
+
+  // Strategy table
+  const stratRows = Object.entries(result.debug).map(([key, count]) => {
+    const pos     = result.allPos[key];
+    const isUsed  = key === result.strategy;
+    const isRight = expected ? pos === expected : false;
+    const posCls  = isRight ? 'text-green-700 font-bold' : pos !== null ? 'text-red-600' : 'text-gray-400';
+    return `<tr class="${isUsed ? 'bg-purple-50' : 'hover:bg-gray-50'}">
+      <td class="px-3 py-2 font-mono text-xs ${isUsed ? 'font-bold text-purple-700' : ''}">${key}${isUsed ? ' ★' : ''}</td>
+      <td class="px-3 py-2 text-center text-sm">${count}</td>
+      <td class="px-3 py-2 text-center text-sm ${posCls}">${pos !== null ? '#'+pos : '—'}</td>
+      <td class="px-3 py-2 text-center text-xs">${isRight ? '✅' : pos !== null ? '❌' : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  // Diagnosis section
+  const diag = result.diagnosis;
+  const diagItems = [
+    ['#rso tìm thấy',   diag.hasRso,          diag.hasRso   ? '✅' : '⚠️ Dùng fallback'],
+    ['#search tìm thấy',diag.hasSearch,        diag.hasSearch? '✅' : '—'],
+    ['#tads (quảng cáo)',diag.hasTads,         diag.hasTads  ? '⚠️ Có ads' : '✅ Không có ads'],
+    ['a[jsname=UWckNb]', diag.countUWckNb > 0, `${diag.countUWckNb} links`],
+    ['a[ping]',          diag.countPing > 0,   `${diag.countPing} links`],
+    ['h3 tags',          diag.countH3 > 0,     `${diag.countH3} thẻ`],
+    ['div.g',            diag.countDivG > 0,   `${diag.countDivG} blocks`],
+    ['.yuRUbf',          diag.countYuRUbf > 0, `${diag.countYuRUbf} containers`],
+  ];
+
+  const diagRows = diagItems.map(([label, ok, note]) =>
+    `<tr><td class="px-3 py-1.5 text-xs text-gray-600">${label}</td>
+         <td class="px-3 py-1.5 text-xs ${ok ? 'text-green-600' : 'text-orange-500'}">${note}</td></tr>`
+  ).join('');
+
+  // Links list from chosen strategy (for debug)
+  const linkRows = (result.bestLinks || []).map((lnk, i) => {
+    const normHost = lnk.hostname.toLowerCase().replace(/^www\./, '');
+    const isTarget = normHost === domain.toLowerCase().replace(/^www\./, '') ||
+                     normHost.endsWith('.' + domain.toLowerCase().replace(/^www\./, ''));
+    return `<tr class="${isTarget ? 'bg-yellow-50' : i % 2 === 0 ? '' : 'bg-gray-50'}">
+      <td class="px-3 py-1 text-center text-xs text-gray-400 font-mono">${i+1}</td>
+      <td class="px-3 py-1 text-xs ${isTarget ? 'font-bold text-yellow-800' : 'text-gray-500'}">${esc(lnk.hostname)}${isTarget ? ' ← TARGET' : ''}</td>
+      <td class="px-3 py-1 text-xs text-gray-400 truncate max-w-xs"><a href="${esc(lnk.url)}" target="_blank" class="hover:text-blue-600">${esc(lnk.url.replace(/^https?:\/\//,'').slice(0,60))}</a></td>
+    </tr>`;
+  }).join('');
+
+  return `
+  <div class="bg-white rounded-2xl shadow overflow-hidden">
+    <div class="${statusCls} px-5 py-4">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <p class="font-bold">${statusIcon} ${esc(title)}</p>
+          <p class="text-sm mt-0.5">${statusText}</p>
+        </div>
+        <div class="text-right text-xs text-gray-600 shrink-0">
+          Domain: <code class="bg-black/10 px-1 rounded">${esc(domain)}</code><br>
+          Strategy: <code class="bg-black/10 px-1 rounded">${result.strategy}</code> (${result.debug[result.strategy]||0} results)
+        </div>
+      </div>
+    </div>
+
+    <div class="p-5 space-y-4">
+
+      <!-- Bảng strategies -->
+      <div>
+        <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Kết quả từng strategy</p>
+        <table class="w-full text-sm border rounded-xl overflow-hidden">
+          <thead class="bg-gray-50 text-xs text-gray-500">
+            <tr>
+              <th class="px-3 py-2 text-left">Strategy</th>
+              <th class="px-3 py-2 text-center">Số links</th>
+              <th class="px-3 py-2 text-center">Vị trí tìm được</th>
+              <th class="px-3 py-2 text-center">Đúng?</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y">${stratRows}</tbody>
+        </table>
+        <p class="text-xs text-gray-400 mt-1">★ = strategy được áp dụng (UWckNb ưu tiên nhất)</p>
+      </div>
+
+      <!-- Danh sách links strategy đã chọn -->
+      ${linkRows ? `<details>
+        <summary class="text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer">
+          📋 Links từ strategy <code>${result.strategy}</code> (${result.debug[result.strategy]||0} URLs)
+        </summary>
+        <div class="mt-2 border rounded-xl overflow-auto max-h-72">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-xs text-gray-500 sticky top-0">
+              <tr>
+                <th class="px-3 py-1.5 text-center">#</th>
+                <th class="px-3 py-1.5 text-left">Hostname</th>
+                <th class="px-3 py-1.5 text-left">URL</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y">${linkRows}</tbody>
+          </table>
+        </div>
+        <p class="text-xs text-gray-400 mt-1">🟡 = domain đang tìm kiếm</p>
+      </details>` : ''}
+
+      <!-- Diagnosis DOM -->
+      <details>
+        <summary class="text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer">🩺 Chẩn đoán DOM</summary>
+        <table class="w-full mt-2 text-sm border rounded-xl overflow-hidden">
+          <tbody class="divide-y">${diagRows}</tbody>
+        </table>
+        ${diag.countUWckNb === 0 ? `<p class="text-xs text-red-600 mt-2 font-medium">⚠️ Không có a[jsname="UWckNb"] — Google đã đổi cấu trúc HTML? Cần cập nhật selectors.</p>` : ''}
+      </details>
+
+      ${result.url ? `<p class="text-xs text-gray-500">URL tìm được: <a href="${esc(result.url)}" target="_blank" class="text-blue-600 hover:underline">${esc(result.url)}</a></p>` : ''}
+
+    </div>
+  </div>`;
+}
+
+// ─── TAB 1: Simulator ─────────────────────────────────────────────────────
+const FAKE_DOMAINS = [
+  'tripadvisor.com','viator.com','getyourguide.com','klook.com','expedia.com',
+  'booking.com','travelfish.org','roughguides.com','lonelyplanet.com',
+  'tourradar.com','musement.com','withlocals.com','headout.com','civitatis.com',
+  'thrillophilia.com','asiahighlights.com','vietravel.com','saigontourist.net',
+  'apricottour.com','indochinatravel.com','kimtravelvietnam.com','vietnamdiscovery.com',
+  'danviet.vn','vnexpress.net','tuoitre.vn','thanhnien.vn','dantri.com.vn',
+  'thetravelmagazine.net','holidify.com','toursbykimkim.com'
+];
+
+window._simCases = [
+  { keyword:'busan shore excursions',   domain:'nhatrangtour.vip', expected:3  },
+  { keyword:'Nha Trang BBQ Tour',       domain:'nhatrangtour.vip', expected:50 },
+  { keyword:'Private Guides Nha Trang', domain:'nhatrangtour.vip', expected:75 },
+];
+
+function renderSimCases() {
+  document.getElementById('simCases').innerHTML = window._simCases.map((c,i) => `
+    <div class="flex gap-2 items-center">
+      <input value="${esc(c.keyword)}" oninput="_simCases[${i}].keyword=this.value"
+        class="flex-1 px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" placeholder="Keyword">
+      <input value="${esc(c.domain)}" oninput="_simCases[${i}].domain=this.value"
+        class="w-44 px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-200" placeholder="domain.com">
+      <span class="text-xs text-gray-400 whitespace-nowrap">mong đợi #</span>
+      <input type="number" value="${c.expected}" oninput="_simCases[${i}].expected=+this.value" min="1"
+        class="w-16 px-2 py-2 border rounded-lg text-sm text-center outline-none focus:ring-2 focus:ring-purple-200">
+      <button onclick="_simCases.splice(${i},1);renderSimCases()" class="text-gray-300 hover:text-red-500 text-xl">×</button>
+    </div>`).join('');
+}
+
+function addSimCase() {
+  window._simCases.push({ keyword:'', domain:'nhatrangtour.vip', expected:1 });
+  renderSimCases();
+}
+
+// Tạo HTML giả lập 1 trang (10 kết quả), targetPos là vị trí trong trang (1-10)
+function buildFakePageHTML(targetDomain, pageIndex, targetAbsPos, addAds, addSL, addPAA, addFeat) {
+  const startPos = pageIndex * 10; // 0, 10, 20, ...
+  const addAds_  = addAds  ?? document.getElementById('opt-ads').checked;
+  const addSL_   = addSL   ?? document.getElementById('opt-sitelinks').checked;
+  const addPAA_  = addPAA  ?? document.getElementById('opt-paa').checked;
+  const addFeat_ = addFeat ?? document.getElementById('opt-featured').checked;
+
+  let h = '';
+  if (addAds_ && pageIndex === 0) { // ads chỉ trang đầu
+    h += `<div id="tads">
+      <div class="commercial-unit"><a href="https://ads-tour.com/1" ping="/url?a=1" jsname="ad1"><h3>Ad 1 — Tour Packages</h3></a></div>
+      <div class="commercial-unit"><a href="https://ads-travel.net/2" ping="/url?a=2" jsname="ad2"><h3>Ad 2 — Travel Agency</h3></a></div>
+    </div>`;
+  }
+
+  h += '<div id="rso">';
+
+  if (addFeat_ && pageIndex === 0) {
+    h += `<div class="g"><div class="tF2Cxc"><div class="yuRUbf">
+      <a jsname="UWckNb" href="https://featured-example.com/answer" ping="/url?f=1"><h3>Featured: Best Tours Guide</h3></a>
+    </div></div></div>`;
+  }
+
+  for (let relPos = 1; relPos <= 10; relPos++) {
+    const absPos   = startPos + relPos;
+    const isTarget = (absPos === targetAbsPos);
+    const dom      = isTarget ? targetDomain : (FAKE_DOMAINS[(absPos - 1) % FAKE_DOMAINS.length] || `site${absPos}.com`);
+    const url      = `https://${dom}/result-${absPos}/`;
+    const hasSL    = (absPos === 1 && addSL_ && !isTarget);
+
+    h += `<div class="g"><div class="tF2Cxc">
+      <div class="yuRUbf">
+        <a jsname="UWckNb" href="${url}" ping="/url?q=${absPos}">
+          <h3>${isTarget ? '★ TARGET #'+absPos+': '+dom : 'Result #'+absPos+' — '+dom}</h3>
+        </a>
+      </div>
+      <div class="TbwUpd"><cite>${dom}</cite></div>`;
+
+    if (hasSL) {
+      h += '<div class="HiHjCd">';
+      for (let sl = 1; sl <= 4; sl++) h += `<a href="https://${dom}/sl-${sl}" ping="/url?sl=${sl}" jsname="sl${sl}">Sitelink ${sl}</a>`;
+      h += '</div>';
+    }
+    h += '</div></div>';
+
+    if (relPos === 3 && addPAA_) {
+      h += `<div class="g related-question-pair"><div class="mod"><!-- PAA --></div></div>`;
+    }
+  }
+
+  h += '</div><div id="bottomads"></div>';
+  return h;
+}
+
+async function runSim() {
+  const box      = document.getElementById('sandboxFrame');
+  const out      = document.getElementById('sim-results');
+  const maxPages = parseInt(document.getElementById('opt-pages').value) || 10;
+  out.innerHTML  = '<div class="bg-white rounded-2xl shadow p-5 text-gray-500">⏳ Đang chạy qua ' + maxPages + ' trang...</div>';
+
+  const cards = [];
+
+  for (const c of window._simCases) {
+    if (!c.keyword || !c.domain) continue;
+
+    // Simulate paginating qua từng trang (giống extension mới)
+    let finalResult = null;
+    let foundOnPage = null;
+
+    for (let page = 0; page < maxPages; page++) {
+      box.innerHTML = buildFakePageHTML(c.domain, page, c.expected);
+      const pageResult = runExtraction(c.domain, box);
+      box.innerHTML = '';
+
+      if (pageResult.found) {
+        const absPos = page * 10 + pageResult.position;
+        finalResult = { ...pageResult, position: absPos, page: page + 1 };
+        foundOnPage = page + 1;
+        break;
+      }
+
+      // Dừng sớm nếu ít kết quả (hết data)
+      if ((pageResult.debug?.UWckNb || 0) < 5) break;
+    }
+
+    if (!finalResult) {
+      // Hiển thị kết quả từ trang cuối để diagnosis
+      box.innerHTML = buildFakePageHTML(c.domain, 0, c.expected);
+      finalResult = runExtraction(c.domain, box);
+      box.innerHTML = '';
+      finalResult.position = null;
+      finalResult.found = false;
+    }
+
+    const pageNote = foundOnPage ? ` (trang ${foundOnPage}/${maxPages})` : ` (không thấy trong ${maxPages} trang)`;
+    cards.push(renderResultCard(
+      finalResult, c.domain, c.expected,
+      `"${c.keyword}" — vị trí giả lập: #${c.expected}${pageNote}`
+    ));
+  }
+
+  out.innerHTML = cards.join('') || '<div class="bg-white rounded-2xl shadow p-5 text-gray-400">Không có test case.</div>';
+}
+
+// ─── TAB 2: Real HTML ────────────────────────────────────────────────────
+async function runRealTest() {
+  const html      = document.getElementById('real-html').value.trim();
+  const domain    = document.getElementById('real-domain').value.trim();
+  const expected  = document.getElementById('real-expected').value.trim();
+  const startPos  = parseInt(document.getElementById('real-page').value) || 0;
+  const out       = document.getElementById('real-results');
+
+  if (!html) { alert('Vui lòng paste HTML trước.'); return; }
+  if (!domain) { alert('Nhập domain cần tìm.'); return; }
+
+  out.innerHTML = '<div class="bg-white rounded-2xl shadow p-5 text-gray-500">⏳ Đang phân tích...</div>';
+
+  // Parse HTML in a detached DOM
+  const parser = new DOMParser();
+  const doc    = parser.parseFromString(html, 'text/html');
+
+  // Convert to container div (copy inner to sandbox)
+  const box = document.getElementById('sandboxFrame');
+
+  // Inject relevant sections only (rso, tads, search)
+  const rso    = doc.getElementById('rso');
+  const search = doc.getElementById('search');
+  const tads   = doc.getElementById('tads');
+
+  if (!rso && !search) {
+    // Check if it's partial HTML (just pasted rso content)
+    box.innerHTML = `<div id="rso">${html}</div>`;
+  } else {
+    box.innerHTML = '';
+    if (tads)   box.appendChild(document.adoptNode(tads));
+    if (rso)    box.appendChild(document.adoptNode(rso));
+    else if (search) box.appendChild(document.adoptNode(search));
+  }
+
+  const result = runExtraction(domain, box);
+  box.innerHTML = '';
+
+  // Tính vị trí tuyệt đối = startPos + vị trí trong trang
+  if (result.found && result.position != null) {
+    result.position = startPos + result.position;
+  }
+
+  const pageLabel = startPos === 0 ? 'trang 1 (pos 1–10)' : `trang ${startPos/10+1} (pos ${startPos+1}–${startPos+10})`;
+  const title = expected
+    ? `Phân tích HTML thật — domain: ${domain} — ${pageLabel} (mong đợi #${expected})`
+    : `Phân tích HTML thật — domain: ${domain} — ${pageLabel}`;
+
+  out.innerHTML = renderResultCard(result, domain, expected || null, title);
+
+  // ── Cảnh báo khi < 20 kết quả (rất có thể dùng Google thường thay vì &num=100) ──
+  const totalResults = result.debug[result.strategy] || 0;
+  if (totalResults > 0 && totalResults < 20) {
+    out.innerHTML += `<div class="bg-red-50 border-2 border-red-300 rounded-2xl p-4 mt-3">
+      <p class="font-bold text-red-700 mb-1">🚨 Chỉ có ${totalResults} kết quả — HTML thiếu!</p>
+      <p class="text-sm text-red-600 mb-2">Google thường chỉ trả 10 kết quả/trang. Extension dùng <code>&amp;num=100</code> để lấy 100 kết quả.</p>
+      <p class="text-sm font-semibold text-red-700 mb-1">Cách lấy đúng HTML:</p>
+      <ol class="list-decimal ml-4 text-sm text-red-600 space-y-0.5">
+        <li>Mở incognito → vào URL: <code class="bg-red-100 px-1 rounded select-all">https://www.google.com/search?q=${encodeURIComponent(domain.replace('nhatrangtour.vip',''))}&num=100</code></li>
+        <li>Ctrl+U → Ctrl+A → Ctrl+C → paste lại vào đây</li>
+      </ol>
+    </div>`;
+  }
+
+  // Extra: show what was detected
+  if (!result.found) {
+    const diag = result.diagnosis;
+    let tips = [];
+    if (diag.countUWckNb === 0) tips.push('⚠️ Không tìm thấy <code>a[jsname="UWckNb"]</code> — Google có thể đã thay đổi jsname. Kiểm tra DOM thực tế.');
+    if (!diag.hasRso && !diag.hasSearch) tips.push('⚠️ Không tìm thấy <code>#rso</code> hay <code>#search</code> — HTML paste có thể không đầy đủ.');
+    if (diag.countH3 === 0) tips.push('⚠️ Không có thẻ <code>h3</code> — trang có thể chưa load xong khi copy.');
+    if (totalResults < 20 && totalResults > 0) tips.push(`⚠️ Chỉ có ${totalResults} links — bạn đang paste HTML từ Google 10 kết quả. Dùng <code>&amp;num=100</code> trong URL.`);
+
+    if (tips.length) {
+      out.innerHTML += `<div class="bg-orange-50 border border-orange-200 rounded-2xl p-4 mt-3">
+        <p class="font-semibold text-orange-800 mb-2">💡 Nguyên nhân có thể:</p>
+        <ul class="space-y-1 text-sm text-orange-700 list-disc ml-4">${tips.map(t => `<li>${t}</li>`).join('')}</ul>
+      </div>`;
+    }
+  }
+}
+
+// ─── TAB 3: Live data ─────────────────────────────────────────────────────
+async function initLiveSites() {
+  try {
+    const sites = await fetch(API + '/sites').then(r => r.json());
+    const sel = document.getElementById('live-site');
+    sel.innerHTML = sites.map(s => `<option value="${s.id}">${s.domain}</option>`).join('');
+    if (sites.length) loadLiveData();
+  } catch(e) {
+    document.getElementById('live-results').innerHTML = '<p class="text-red-500 text-sm">Không kết nối được server localhost:5000</p>';
+  }
+}
+
+async function loadLiveData() {
+  const siteId = document.getElementById('live-site').value;
+  const out    = document.getElementById('live-results');
+  if (!siteId) return;
+  out.innerHTML = '<p class="text-gray-400 text-sm">⏳ Đang tải...</p>';
+  try {
+    const rows = await fetch(API + '/rankings/' + siteId).then(r => r.json());
+    if (!rows.length) { out.innerHTML = '<p class="text-gray-400 text-sm text-center py-6">Chưa có dữ liệu ranking nào.</p>'; return; }
+
+    const ranked   = rows.filter(r => r.position != null).length;
+    const notFound = rows.filter(r => r.position == null).length;
+
+    out.innerHTML = `
+      <div class="flex gap-3 mb-4">
+        <div class="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-center flex-1">
+          <p class="text-xl font-bold text-green-700">${ranked}</p>
+          <p class="text-xs text-green-600">Có thứ hạng</p>
+        </div>
+        <div class="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-center flex-1">
+          <p class="text-xl font-bold text-gray-500">${notFound}</p>
+          <p class="text-xs text-gray-400">Không tìm thấy</p>
+        </div>
+      </div>
+      <table class="w-full text-sm border rounded-xl overflow-hidden">
+        <thead class="bg-gray-50 text-xs text-gray-500">
+          <tr>
+            <th class="px-4 py-2 text-left">Keyword</th>
+            <th class="px-4 py-2 text-center">Vị trí</th>
+            <th class="px-4 py-2 text-center">Cập nhật</th>
+            <th class="px-4 py-2 text-center">Test lại</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y">
+          ${rows.map(r => `
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-2.5 font-medium">${esc(r.keyword)}</td>
+            <td class="px-4 py-2.5 text-center">${badge(r.position)}</td>
+            <td class="px-4 py-2.5 text-center text-xs text-gray-400">${fmtDate(r.checkedAt)}</td>
+            <td class="px-4 py-2.5 text-center">
+              <button onclick="quickTestFromLive('${esc(r.keyword)}','${esc(r.domain||'')}',${r.position||'null'})"
+                class="text-xs px-2 py-1 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg transition">
+                🧪 Simulate
+              </button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch(e) {
+    out.innerHTML = `<p class="text-red-500 text-sm">Lỗi: ${esc(e.message)}</p>`;
+  }
+}
+
+function quickTestFromLive(keyword, domain, knownPos) {
+  // Switch to sim tab, add case with this keyword
+  window._simCases = [{ keyword, domain: domain || 'nhatrangtour.vip', expected: knownPos || 1 }];
+  renderSimCases();
+  switchTab('sim');
+  runSim();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────
+renderSimCases();
+window.addEventListener('load', () => setTimeout(runSim, 150));
+</script>
+</body>
+</html>

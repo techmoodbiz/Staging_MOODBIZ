@@ -361,29 +361,38 @@ const AuditorTab: React.FC<AuditorTabProps> = ({
           <div className="absolute top-0 right-0 w-96 h-96 bg-cyan/5 rounded-full blur-[100px] -mr-32 -mt-32" />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start relative z-30">
-          {/* Column 1: Entities */}
-          <div className="space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 ml-2">{t('auditor.brand')}</p>
-                <BrandSelector availableBrands={availableBrands} selectedBrandId={selectedBrandId} onChange={setSelectedBrandId} className="!rounded-2xl shadow-soft" />
-              </div>
-              <div>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 ml-2">{t('auditor.target_product')}</p>
-                <MultiSelect
-                  options={productOptions}
-                  value={selectedProductIds}
-                  onChange={setSelectedProductIds}
-                  placeholder={t('auditor.select_product')}
-                  icon={ShoppingBag}
-                  className="!rounded-2xl shadow-soft"
-                />
-              </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start relative z-30">
+          {/* Column 1: Brand, Products */}
+          <div className="space-y-6">
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 ml-2">{t('auditor.brand')}</p>
+              <BrandSelector availableBrands={availableBrands} selectedBrandId={selectedBrandId} onChange={setSelectedBrandId} className="!rounded-2xl shadow-soft" />
             </div>
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 ml-2">{t('auditor.target_product')}</p>
+              <MultiSelect
+                options={productOptions}
+                value={selectedProductIds}
+                onChange={setSelectedProductIds}
+                placeholder={t('auditor.select_product')}
+                icon={ShoppingBag}
+                className="!rounded-2xl shadow-soft"
+              />
+            </div>
+          </div>
 
-            <div className="space-y-4">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 ml-2">{t('auditor.method')}</p>
+          {/* Column 2: Language, Platform, Mode toggle */}
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">{t('auditor.language')}</p>
+              <CustomSelect options={languageOptions} value={language} onChange={setLanguage} icon={Globe} className="!rounded-2xl shadow-soft" />
+            </div>
+            <div className="space-y-3">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">{t('auditor.platform')}</p>
+              <CustomSelect options={platformOptions} value={platform} onChange={setPlatform} className="!rounded-2xl shadow-soft" />
+            </div>
+            <div className="space-y-3">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">{t('auditor.method')}</p>
               <div className="flex bg-navy/5 p-1.5 rounded-[1.5rem] border border-slate-100 shadow-inner-soft">
                 <button
                   onClick={() => { setAuditMode('text'); setAuditResult(null); setInputUrl(''); }}
@@ -401,31 +410,20 @@ const AuditorTab: React.FC<AuditorTabProps> = ({
             </div>
           </div>
 
-          {/* Column 2: Config & Input */}
-          <div className="space-y-8">
-            <div className="grid grid-cols-2 gap-6">
-              <div className="space-y-4">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">{t('auditor.language')}</p>
-                <CustomSelect options={languageOptions} value={language} onChange={setLanguage} icon={Globe} className="!rounded-2xl shadow-soft" />
-              </div>
-              <div className="space-y-4">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">{t('auditor.platform')}</p>
-                <CustomSelect options={platformOptions} value={platform} onChange={setPlatform} className="!rounded-2xl shadow-soft" />
-              </div>
-            </div>
-
+          {/* Column 3: Input + Audit button */}
+          <div className="flex flex-col gap-4">
             {auditMode === 'text' ? (
-              <div className="space-y-4">
+              <div className="flex flex-col gap-3 flex-1">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">{t('auditor.placeholder_text')}</p>
                 <textarea
-                  className="w-full bg-slate-50/50 border border-slate-200 rounded-3xl p-6 min-h-[160px] text-[14px] font-bold text-navy placeholder:text-slate-300 focus:bg-white focus:ring-12 focus:ring-cyan/5 transition-all custom-scrollbar outline-none shadow-inner-soft italic leading-relaxed"
+                  className="flex-1 w-full bg-slate-50/50 border border-slate-200 rounded-3xl p-5 min-h-[160px] text-[14px] font-bold text-navy placeholder:text-slate-300 focus:bg-white focus:ring-12 focus:ring-cyan/5 transition-all custom-scrollbar outline-none shadow-inner-soft italic leading-relaxed resize-none"
                   placeholder={t('auditor.placeholder_text')}
                   value={inputText}
                   onChange={e => setInputText(e.target.value)}
                 />
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="flex flex-col gap-3">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">{t('auditor.url_label')}</p>
                 <div className="relative group/url">
                   <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within/url:text-cyan transition-colors">
@@ -441,22 +439,16 @@ const AuditorTab: React.FC<AuditorTabProps> = ({
                 </div>
               </div>
             )}
+            <button
+              onClick={handleAudit}
+              disabled={isAuditing || (auditMode === 'text' ? !inputText.trim() : !inputUrl.trim())}
+              className="w-full py-5 bg-navy text-white rounded-3xl font-black text-[12px] flex justify-center items-center gap-3 shadow-2xl hover:shadow-cyan/10 transition-all duration-700 active:scale-[0.98] disabled:opacity-30 uppercase tracking-[0.3em] relative overflow-hidden border border-white/10 group/btn"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-cyan/20 via-white/10 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-1000" />
+              {isAuditing ? <RefreshCw className="animate-spin text-cyan" size={20} /> : <Activity size={20} className="text-cyan drop-shadow-glow" />}
+              <span className="relative z-10">{isAuditing ? (auditStatus || t('auditor.processing')) : (auditMode === 'url' ? t('auditor.scan_endpoint') : t('auditor.start_audit'))}</span>
+            </button>
           </div>
-        </div>
-
-        <div className="mt-8 pt-8 border-t border-slate-100 flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
-          <p className="text-[11px] text-slate-400 font-bold italic max-w-lg leading-relaxed">
-            {t('auditor.waiting_data')}
-          </p>
-          <button
-            onClick={handleAudit}
-            disabled={isAuditing || (auditMode === 'text' ? !inputText.trim() : !inputUrl.trim())}
-            className="min-w-[320px] py-6 bg-navy text-white rounded-[2rem] font-black text-[12px] flex justify-center items-center gap-5 shadow-2xl hover:shadow-cyan/10 transition-all duration-700 active:scale-[0.98] disabled:opacity-30 uppercase tracking-[0.3em] relative overflow-hidden border border-white/10 group/btn"
-          >
-            <div className="absolute inset-0 bg-gradient-to-r from-cyan/20 via-white/10 to-transparent -translate-x-full group-hover/btn:translate-x-full transition-transform duration-1000" />
-            {isAuditing ? <RefreshCw className="animate-spin text-cyan" size={20} /> : <Activity size={20} className="text-cyan drop-shadow-glow" />}
-            <span className="relative z-10">{isAuditing ? (auditStatus || t('auditor.processing')) : (auditMode === 'url' ? t('auditor.scan_endpoint') : t('auditor.start_audit'))}</span>
-          </button>
         </div>
       </div>
 

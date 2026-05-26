@@ -55,22 +55,25 @@ export const FeatureCard: React.FC<{ title: string; desc: string; icon: any; del
 );
 
 // --- Quick Action Card ---
-export const QuickActionCard: React.FC<{ title: string; desc: string; icon: any; onClick: () => void; color: 'blue' | 'cyan' | 'emerald' | 'indigo' }> = ({ title, desc, icon: Icon, onClick, color }) => (
-  <button
-    onClick={onClick}
-    className="text-left p-10 rounded-[2.5rem] border border-slate-100 bg-white shadow-soft transition-all duration-500 hover:shadow-premium hover:-translate-y-2 group relative overflow-hidden glow premium-card"
-  >
-    <div className={`absolute top-0 right-0 w-32 h-32 blur-3xl opacity-0 group-hover:opacity-10 transition-opacity duration-700 ${color === 'blue' ? 'bg-navy' : color === 'emerald' ? 'bg-emerald-500' : color === 'indigo' ? 'bg-indigo-500' : 'bg-cyan'}`} />
-
-    <div className={`p-4 rounded-2xl w-fit mb-8 shadow-soft transition-all duration-500 group-hover:scale-110 group-hover:rotate-3 ${color === 'blue' ? 'bg-navy text-white' : color === 'emerald' ? 'bg-emerald-500 text-white' : color === 'indigo' ? 'bg-indigo-500 text-white' : 'bg-cyan text-white shadow-glow'}`}>
-      <Icon size={32} strokeWidth={2.5} />
-    </div>
-    <div className="space-y-2">
-      <h3 className="text-h2-premium group-hover:text-cyan transition-colors">{title}</h3>
-      <p className="text-slate-500 text-[15px] font-medium leading-relaxed tracking-tight">{desc}</p>
-    </div>
-  </button>
-);
+export const QuickActionCard: React.FC<{ title: string; desc: string; icon: any; onClick: () => void; color: 'blue' | 'cyan' | 'emerald' | 'indigo' | 'violet'; compact?: boolean }> = ({ title, desc, icon: Icon, onClick, color, compact }) => {
+  const glowClass = color === 'blue' ? 'bg-navy' : color === 'emerald' ? 'bg-emerald-500' : color === 'indigo' ? 'bg-indigo-500' : color === 'violet' ? 'bg-violet-500' : 'bg-cyan';
+  const iconClass = color === 'blue' ? 'bg-navy text-white' : color === 'emerald' ? 'bg-emerald-500 text-white' : color === 'indigo' ? 'bg-indigo-500 text-white' : color === 'violet' ? 'bg-violet-500 text-white' : 'bg-cyan text-white shadow-glow';
+  return (
+    <button
+      onClick={onClick}
+      className={`text-left ${compact ? 'p-7' : 'p-10'} rounded-[2rem] border border-slate-100 bg-white shadow-soft transition-all duration-500 hover:shadow-premium hover:-translate-y-2 group relative overflow-hidden glow premium-card`}
+    >
+      <div className={`absolute top-0 right-0 w-32 h-32 blur-3xl opacity-0 group-hover:opacity-10 transition-opacity duration-700 ${glowClass}`} />
+      <div className={`${compact ? 'p-3 mb-6' : 'p-4 mb-8'} rounded-xl w-fit shadow-soft transition-all duration-500 group-hover:scale-110 group-hover:rotate-3 ${iconClass}`}>
+        <Icon size={compact ? 26 : 32} strokeWidth={2.5} />
+      </div>
+      <div className="space-y-2">
+        <h3 className={`${compact ? 'text-[15px] font-black text-navy leading-snug' : 'text-h2-premium'} group-hover:text-cyan transition-colors`}>{title}</h3>
+        <p className={`text-slate-500 ${compact ? 'text-[12px]' : 'text-[15px]'} font-medium leading-relaxed tracking-tight`}>{desc}</p>
+      </div>
+    </button>
+  );
+};
 
 
 

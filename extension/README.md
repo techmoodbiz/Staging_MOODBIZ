@@ -12,7 +12,7 @@ Extension này thực hiện tìm kiếm Google thực tế từ trình duyệt 
 
 ## Sử dụng
 
-1. Mở Dashboard: http://localhost:5000
+1. Mở Dashboard: http://localhost:5173
 2. Chọn website, thêm keywords
 3. Click nút **"🔍 Check Google (Extension)"** (màu tím)
 4. Popup hiện lên, nhấn vào **icon Extension** trên Chrome

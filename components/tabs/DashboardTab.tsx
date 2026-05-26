@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PenTool, Activity, Building2, Zap, Users, TrendingUp, ShieldCheck, Target, Search, Globe } from 'lucide-react';
+import { PenTool, Activity, Building2, Zap, Users, ShieldCheck, Target, Search, Globe, BarChart2 } from 'lucide-react';
 import { User, Brand, Generation, Auditor } from '../../types';
-import { StatCard, FeatureCard, QuickActionCard, SkeletonCard, ActivityItem } from '../UIComponents';
+import { StatCard, QuickActionCard, SkeletonCard, ActivityItem } from '../UIComponents';
 import SectionHeader from '../SectionHeader';
 import { db } from '../../firebase';
 import { useTranslation } from 'react-i18next';
@@ -98,18 +98,43 @@ const DashboardTab: React.FC<DashboardTabProps> = ({
                   {availableBrands.length}
                 </p>
               </div>
+              <div className="space-y-2">
+                <p className="text-white/30 text-[10px] uppercase font-black tracking-[0.3em]">{t('dashboard.generations')}</p>
+                <p className="text-xl font-black text-white/90 tracking-tight flex items-center gap-2">
+                  <Zap size={18} className="text-cyan" />
+                  {generations.length}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-white/30 text-[10px] uppercase font-black tracking-[0.3em]">{t('dashboard.audits')}</p>
+                <p className="text-xl font-black text-white/90 tracking-tight flex items-center gap-2">
+                  <ShieldCheck size={18} className="text-cyan" />
+                  {auditors.length}
+                </p>
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {/* Quick Actions */}
-      <div className="grid md:grid-cols-4 gap-8">
-        <QuickActionCard title={t('dashboard.create_content')} desc={t('dashboard.create_content_desc')} icon={PenTool} onClick={() => navigate('/generator')} color="blue" />
-        <QuickActionCard title={t('dashboard.ai_research')} desc={t('dashboard.ai_research_desc')} icon={Search} onClick={() => navigate('/research')} color="indigo" />
-        <QuickActionCard title={t('dashboard.check_voice')} desc={t('dashboard.check_voice_desc')} icon={Activity} onClick={() => navigate('/auditor')} color="cyan" />
-        <QuickActionCard title={t('dashboard.seo_inspector')} desc={t('dashboard.seo_inspector_desc')} icon={Globe} onClick={() => navigate('/seo-inspector')} color="emerald" />
-      </div>
+      {(() => {
+        const canAccessRankChecker = currentUser.role === 'admin' || currentUser.role === 'brand_owner';
+        const gridCols = canAccessRankChecker
+          ? 'grid-cols-2 md:grid-cols-3 lg:grid-cols-5'
+          : 'grid-cols-2 md:grid-cols-4';
+        return (
+          <div className={`grid ${gridCols} gap-6`}>
+            <QuickActionCard compact={canAccessRankChecker} title={t('dashboard.create_content')} desc={t('dashboard.create_content_desc')} icon={PenTool} onClick={() => navigate('/generator')} color="blue" />
+            <QuickActionCard compact={canAccessRankChecker} title={t('dashboard.ai_research')} desc={t('dashboard.ai_research_desc')} icon={Search} onClick={() => navigate('/research')} color="indigo" />
+            <QuickActionCard compact={canAccessRankChecker} title={t('dashboard.check_voice')} desc={t('dashboard.check_voice_desc')} icon={Activity} onClick={() => navigate('/auditor')} color="cyan" />
+            <QuickActionCard compact={canAccessRankChecker} title={t('dashboard.seo_inspector')} desc={t('dashboard.seo_inspector_desc')} icon={Globe} onClick={() => navigate('/seo-inspector')} color="emerald" />
+            {canAccessRankChecker && (
+              <QuickActionCard compact title={t('dashboard.rank_checker')} desc={t('dashboard.rank_checker_desc')} icon={BarChart2} onClick={() => navigate('/rank-checker')} color="violet" />
+            )}
+          </div>
+        );
+      })()}
 
       {/* Stats & Values */}
       <div className="space-y-8">
@@ -155,7 +180,7 @@ const DashboardTab: React.FC<DashboardTabProps> = ({
 
                   {brand.core_values && brand.core_values.length > 4 && (
                     <div className="pt-2 pl-4">
-                      <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest leading-none">+{brand.core_values.length - 4} more</span>
+                      <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest leading-none">{t('dashboard.more_values', { count: brand.core_values.length - 4 })}</span>
                     </div>
                   )}
                 </div>
@@ -176,12 +201,15 @@ const DashboardTab: React.FC<DashboardTabProps> = ({
           <SectionHeader title={t('dashboard.recent_activities')} subtitle={t('dashboard.recent_activities_subtitle')} />
           <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
             <div className="space-y-4">
-              {generations.slice(0, 3).map(g => (
-                <ActivityItem key={g.id} type="generator" title={g.input_data.topic} subtitle={g.input_data.platform} time={g.timestamp} />
-              ))}
-              {auditors.slice(0, 2).map(a => (
-                <ActivityItem key={a.id} type="auditor" title="Audit Content" subtitle={a.brand_name || 'Brand'} time={a.timestamp} />
-              ))}
+              {[
+                ...generations.map(g => ({ type: 'generator' as const, title: g.input_data.topic, subtitle: g.input_data.platform, time: g.timestamp, id: g.id })),
+                ...auditors.map(a => ({ type: 'auditor' as const, title: t('dashboard.audit_content'), subtitle: a.brand_name || 'Brand', time: a.timestamp, id: a.id })),
+              ]
+                .sort((a, b) => (b.time?.seconds || 0) - (a.time?.seconds || 0))
+                .slice(0, 5)
+                .map(item => (
+                  <ActivityItem key={item.id} type={item.type} title={item.title} subtitle={item.subtitle} time={item.time} />
+                ))}
             </div>
           </div>
         </div>

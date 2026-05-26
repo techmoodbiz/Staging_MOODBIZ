@@ -110,6 +110,10 @@ const BrandModal: React.FC<BrandModalProps> = ({ isOpen, onClose, onSave, brand,
     try {
       const data = await analyzeWebsite(url);
       applyAnalysisToBrand(data);
+      try {
+        const hostname = new URL(url).hostname.replace(/^www\./, '');
+        if (hostname) updateField('domain', hostname);
+      } catch {}
     } catch (err: any) {
       setPreviewError(err.message || t('research.error_system'));
     } finally {
@@ -159,10 +163,21 @@ const BrandModal: React.FC<BrandModalProps> = ({ isOpen, onClose, onSave, brand,
     try {
       const isNew = !brand; // Check if creating new brand
       const brandId = formData.id || Date.now().toString();
+
+      // Auto-derive domain from website URL if not already set
+      let autoDomain = formData.domain || '';
+      if (!autoDomain && initialGuidelineType === 'website' && websiteUrl.trim()) {
+        try {
+          const u = new URL(/^https?:\/\//i.test(websiteUrl) ? websiteUrl : 'https://' + websiteUrl);
+          autoDomain = u.hostname.replace(/^www\./, '');
+        } catch {}
+      }
+
       const finalData: Brand = {
         ...formData as Brand,
         id: brandId,
         name: brandName,
+        domain: autoDomain || formData.domain || '',
         personality: formData.brand_personality?.join(', ') || formData.personality || '',
         voice: formData.tone_of_voice || formData.voice || ''
       };

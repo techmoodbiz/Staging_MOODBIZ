@@ -219,15 +219,67 @@
       padding: 10px 12px;
       margin: 0 16px 12px;
     }
-    .job-domain {
+    .job-brand {
       font-size: 13px;
+      font-weight: 700;
+      color: #f8fafc;
+      margin-bottom: 1px;
+    }
+    .job-project {
+      font-size: 11px;
       font-weight: 600;
       color: #60a5fa;
-      margin-bottom: 2px;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .job-project-sep { color: #334155; }
+    .job-domain {
+      font-size: 11px;
+      color: #475569;
+      margin-bottom: 4px;
     }
     .job-meta {
       font-size: 11px;
       color: #64748b;
+    }
+
+    /* Context bar — hiển thị trong checking-state */
+    .ctx-bar {
+      padding: 7px 16px;
+      background: #0f172a;
+      border-bottom: 1px solid #1e293b;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-height: 30px;
+    }
+    .ctx-brand {
+      font-size: 11px;
+      font-weight: 700;
+      color: #e2e8f0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 110px;
+    }
+    .ctx-sep { color: #334155; font-size: 11px; flex-shrink: 0; }
+    .ctx-project {
+      font-size: 11px;
+      font-weight: 600;
+      color: #60a5fa;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 110px;
+    }
+    .ctx-domain {
+      margin-left: auto;
+      font-size: 10px;
+      color: #475569;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
 
     /* Empty state */
@@ -286,7 +338,7 @@
         <div class="header-sub">Google Search Bridge</div>
       </div>
     </div>
-    <div class="server-badge" id="server-badge" onclick="retryServer()">
+    <div class="server-badge" id="server-badge">
       <div class="dot" id="server-dot"></div>
       <span id="server-text">Đang kết nối...</span>
     </div>
@@ -305,12 +357,17 @@
         để bắt đầu kiểm tra.
       </div>
       <br>
-      <a href="https://rank.moodbiz.vn" target="_blank" class="empty-link">→ Mở Dashboard</a>
+      <a href="https://brandchecker.moodbiz.agency" target="_blank" class="empty-link">→ Mở Dashboard</a>
     </div>
 
     <!-- Job ready state -->
     <div id="job-ready" style="display:none; padding: 14px 0 0;">
       <div class="job-info">
+        <div class="job-brand" id="job-brand">—</div>
+        <div class="job-project">
+          <span class="job-project-sep">›</span>
+          <span id="job-project">—</span>
+        </div>
         <div class="job-domain" id="job-domain">—</div>
         <div class="job-meta" id="job-meta">—</div>
       </div>
@@ -329,6 +386,14 @@
 
     <!-- Checking state -->
     <div id="checking-state" style="display:none; padding: 14px 0 0;">
+
+      <!-- Context bar: brand › project · domain -->
+      <div class="ctx-bar" id="ctx-bar">
+        <span class="ctx-brand" id="ctx-brand">—</span>
+        <span class="ctx-sep">›</span>
+        <span class="ctx-project" id="ctx-project">—</span>
+        <span class="ctx-domain" id="ctx-domain"></span>
+      </div>
 
       <!-- Status -->
       <div class="status-section">
@@ -393,10 +458,10 @@
 
   <!-- Buttons -->
   <div class="btn-row">
-    <button class="btn btn-start" id="start-btn" onclick="handleStart()">
+    <button class="btn btn-start" id="start-btn">
       ▶ Bắt đầu kiểm tra
     </button>
-    <button class="btn btn-stop" id="stop-btn" onclick="handleStop()" disabled style="flex: 0.5">
+    <button class="btn btn-stop" id="stop-btn" disabled style="flex: 0.5">
       ■ Dừng
     </button>
   </div>
